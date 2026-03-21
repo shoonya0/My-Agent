@@ -12,6 +12,28 @@ const (
 	LangKotlin = "kotlin"
 )
 
+// NodeState represents the state of a node during graph traversal
+type NodeState int
+
+const (
+	NodeUnvisited  NodeState = iota // node has not been visited yet
+	NodeInProgress                  // node is currently being processed (in DFS stack)
+	NodeCompleted                   // node has been completely processed
+)
+
+// Helper methods for NodeState
+func (ns NodeState) IsVisited() bool {
+	return ns != NodeUnvisited
+}
+
+func (ns NodeState) IsInProgress() bool {
+	return ns == NodeInProgress
+}
+
+func (ns NodeState) IsCompleted() bool {
+	return ns == NodeCompleted
+}
+
 // FileInfo represents information about a source file and its functions
 type FileInfo struct {
 	Path     string     // path to the file
@@ -35,17 +57,35 @@ type funcInfo struct {
 	CallingFunctions []FunctionRef // functions that call this function (incoming edges)
 
 	// Graph traversal metadata
-	Visited  bool          // for graph traversal algorithms
-	InStack  bool          // for cycle detection in DFS
+	State    NodeState     // current state during graph traversal and cycle detection
 	Distance int           // distance from root node
 	Parent   *FunctionRef  // parent in the traversal tree
 	Children []FunctionRef // direct children in the dependency tree
 
 	// Function categorization
 	IsRootFunction bool // true if this is the specified root function
-	IsLeafFunction bool // true if this function doesn't call any other functions
-	IsCyclic       bool // true if this function is part of a cycle
 	CycleID        int  // identifier for the cycle this function belongs to (-1 if not in cycle)
+}
+
+// Helper methods for funcInfo
+func (f *funcInfo) IsLeafFunction() bool {
+	return len(f.CalledFunctions) == 0
+}
+
+func (f *funcInfo) IsCyclic() bool {
+	return f.CycleID != -1
+}
+
+func (f *funcInfo) IsVisited() bool {
+	return f.State.IsVisited()
+}
+
+func (f *funcInfo) IsInProgress() bool {
+	return f.State.IsInProgress()
+}
+
+func (f *funcInfo) IsCompleted() bool {
+	return f.State.IsCompleted()
 }
 
 // FunctionRef represents a reference to a function, used for building the graph
