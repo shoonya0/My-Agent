@@ -22,22 +22,26 @@ import "time"
 // type Config struct { ServiceName string "st">`envconfig:"SERVICE_NAME" required:"true"` LogLevel string "st">`envconfig:"LOG_LEVEL" default:"info"` Port string "st">`envconfig:"PORT" default:"8080"` GRPCPort string "st">`envconfig:"GRPC_PORT" default:"9090"` PostgresDSN string "st">`envconfig:"POSTGRES_DSN" required:"true"` RedisAddr string "st">`envconfig:"REDIS_ADDR" required:"true"` JWTSecret string "st">`envconfig:"JWT_SECRET" required:"true"` KafkaBrokers string "st">`envconfig:"KAFKA_BROKERS" required:"true"` OpenAIKey string "st">`envconfig:"OPENAI_API_KEY" required:"true"`
 
 type Config struct {
-	ServiceName       string `envconfig:"SERVICE_NAME" required:"true"`
-	LogLevel          string `envconfig:"LOG_LEVEL" default:"info"`
-	Port              string `envconfig:"PORT" default:"8080"`
-	GRPCPort          string `envconfig:"GRPC_PORT" default:"9090"`
-	PostgresDSN       string `envconfig:"POSTGRES_DSN" required:"true"`
-	RedisAddr         string `envconfig:"REDIS_ADDR" required:"true"`
-	JWTSecret         string `envconfig:"JWT_SECRET" required:"true"`
-	KafkaBrokers      string `envconfig:"KAFKA_BROKERS" required:"true"`
-	OpenAIKey         string `envconfig:"OPENAI_API_KEY" required:"true"`
-	OrchestratorModel string `envconfig:"ORCHESTRATOR_MODEL" default:"gpt-4o"`
-	PromptAgentModel  string `envconfig:"PROMPT_AGENT_MODEL" default:"gpt-4o"`
-	ComfyUIBaseURL    string `envconfig:"COMFYUI_BASE_URL" required:"true"`
-	AWSBucket         string `envconfig:"AWS_BUCKET" required:"true"`
-	AWSEndpoint       string `envconfig:"AWS_ENDPOINT" optional:"true"`
-	JaegerEndpoint    string `envconfig:"JAEGER_ENDPOINT" default:"localhost:4317"`
-	EncryptionKey     string `envconfig:"ENCRYPTION_KEY" required:"true"`
+	ServiceName string `mapstructure:"SERVICE_NAME" required:"true"`
+	LogLevel    string `mapstructure:"LOG_LEVEL" default:"info"`
+	Port        string `mapstructure:"PORT" default:"8080"`
+	GRPCPort    string `mapstructure:"GRPC_PORT" default:"9090"`
+	PostgresDSN string `mapstructure:"POSTGRES_DSN" required:"true"`
+
+	RedisAddr     string `mapstructure:"REDIS_ADDR" required:"true"`
+	RedisPassword string `mapstructure:"REDIS_PASSWORD" default:""`
+	RedisDB       int    `mapstructure:"REDIS_DB" default:"0"`
+
+	JWTSecret         string `mapstructure:"JWT_SECRET" required:"true"`
+	KafkaBrokers      string `mapstructure:"KAFKA_BROKERS" required:"true"`
+	OpenAIKey         string `mapstructure:"OPENAI_API_KEY" required:"true"`
+	OrchestratorModel string `mapstructure:"ORCHESTRATOR_MODEL" default:"gpt-4o"`
+	PromptAgentModel  string `mapstructure:"PROMPT_AGENT_MODEL" default:"gpt-4o"`
+	ComfyUIBaseURL    string `mapstructure:"COMFYUI_BASE_URL" required:"true"`
+	AWSBucket         string `mapstructure:"AWS_BUCKET" required:"true"`
+	AWSEndpoint       string `mapstructure:"AWS_ENDPOINT" optional:"true"`
+	JaegerEndpoint    string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
+	EncryptionKey     string `mapstructure:"ENCRYPTION_KEY" required:"true"`
 }
 
 type User struct {
