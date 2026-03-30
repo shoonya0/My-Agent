@@ -33,7 +33,8 @@ type Config struct {
 	AWSBucket         string `mapstructure:"AWS_BUCKET" required:"true"`
 	AWSEndpoint       string `mapstructure:"AWS_ENDPOINT" optional:"true"`
 	JaegerEndpoint    string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
-	EncryptionKey     string `mapstructure:"ENCRYPTION_KEY" required:"true"`
+	EncryptionKey          string `mapstructure:"ENCRYPTION_KEY" required:"true"`
+	PromptAgentSystemPrompt string `mapstructure:"PROMPT_AGENT_SYSTEM_PROMPT" optional:"true"`
 }
 
 // ---------------------------------------------------------------------------

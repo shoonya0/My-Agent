@@ -1,1 +1,2 @@
-{"level":"fatal","ts":"2026-03-30T20:48:48.104+0530","caller":"orchestrator/main.go:39","msg":"Failed to create Kafka producer","error":"kafka: create producer: kafka: invalid configuration (You must provide at least one broker address)","stacktrace":"main.main\n\tD:/code/MyAgent/cmd/orchestrator/main.go:39\nruntime.main\n\tC:/Users/krish/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.windows-amd64/src/runtime/proc.go:285"}
+{"level":"info","ts":"2026-03-30T22:46:36.777+0530","caller":"kafka/producer.go:43","msg":"Kafka producer connected","brokers":["localhost:9092"]}
+{"level":"info","ts":"2026-03-30T22:46:36.779+0530","caller":"orchestrator/main.go:54","msg":"Starting orchestrator HTTP server","port":"8082"}
