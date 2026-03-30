@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"myAgent/internal/apigateway"
 	"myAgent/internal/config"
-	"myAgent/internal/middleware"
+	"myAgent/pkg/httpserver"
 	"myAgent/pkg/model"
 
 	"github.com/gin-gonic/gin"
@@ -27,24 +28,23 @@ func main() {
 
 	// start Gin server
 	r := gin.Default()
+	r.SetTrustedProxies([]string{"127.0.0.1"})
 
-	routes(r)
+	handler := apigateway.NewGatewayHandler(cfg, RedisClient)
+	handler.RegisterRoutes(r)
 
-	fmt.Println("Listening on http://localhost" + cfg.Port + "\n")
-
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
+		log.Fatalf("Server error: %v", err)
 	}
 }
 
 func InitRedis(cfg model.Config) *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,     // Redis server address
-		Password: cfg.RedisPassword, // No password
-		DB:       cfg.RedisDB,       // Use default DB
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
 	})
 
-	// Use Ping to verify the connection
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatal("Failed to connect to Redis: ", err)
 	}
@@ -52,28 +52,4 @@ func InitRedis(cfg model.Config) *redis.Client {
 	fmt.Println("Connected to Redis successfully!")
 
 	return rdb
-}
-
-func routes(r *gin.Engine) {
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"message": "OK"})
-	})
-
-	public := r.Group("/api")
-	public.POST("/register", func(c *gin.Context) {
-		c.JSON(200, gin.H{"message": "OK"})
-	})
-
-	protected := r.Group("/api/v1")
-	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret, RedisClient))
-	{
-		protected.GET("/me", func(c *gin.Context) {
-			user := middleware.CurrentUser(c)
-			c.JSON(200, gin.H{
-				"user_id": user.UserID,
-				"roles":   user.Roles,
-				"email":   user.Email,
-			})
-		})
-	}
 }
