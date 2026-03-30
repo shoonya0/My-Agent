@@ -85,6 +85,7 @@ func (w *Worker) handle(ctx context.Context, msg *kafka.Message) error {
 
 	event := model.RefinedPromptEvent{
 		JobID:            job.JobID,
+		UserID:           job.UserID,
 		RefinedPrompt:    refined.Prompt,
 		StyleParams:      refined.StyleParams,
 		OriginalImageURL: job.ImageURL,

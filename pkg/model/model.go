@@ -30,8 +30,11 @@ type Config struct {
 	OrchestratorModel string `mapstructure:"ORCHESTRATOR_MODEL" default:"gpt-4o"`
 	PromptAgentModel  string `mapstructure:"PROMPT_AGENT_MODEL" default:"gpt-4o"`
 	ComfyUIBaseURL    string `mapstructure:"COMFYUI_BASE_URL" required:"true"`
-	AWSBucket         string `mapstructure:"AWS_BUCKET" required:"true"`
-	AWSEndpoint       string `mapstructure:"AWS_ENDPOINT" optional:"true"`
+	AWSBucket          string `mapstructure:"AWS_BUCKET" required:"true"`
+	AWSEndpoint        string `mapstructure:"AWS_ENDPOINT" optional:"true"`
+	AWSRegion          string `mapstructure:"AWS_REGION" default:"us-east-1"`
+	AWSAccessKeyID     string `mapstructure:"AWS_ACCESS_KEY_ID" optional:"true"`
+	AWSSecretAccessKey string `mapstructure:"AWS_SECRET_ACCESS_KEY" optional:"true"`
 	JaegerEndpoint    string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
 	EncryptionKey          string `mapstructure:"ENCRYPTION_KEY" required:"true"`
 	PromptAgentSystemPrompt string `mapstructure:"PROMPT_AGENT_SYSTEM_PROMPT" optional:"true"`
@@ -241,6 +244,7 @@ type PromptRefinementJob struct {
 // and consumed by the image-gen-agent.
 type RefinedPromptEvent struct {
 	JobID            string            `json:"job_id"`
+	UserID           string            `json:"user_id"`
 	RefinedPrompt    string            `json:"refined_prompt"`
 	StyleParams      StyleParams       `json:"style_params"`
 	OriginalImageURL string            `json:"original_image_url"`

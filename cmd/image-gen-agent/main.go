@@ -1,0 +1,79 @@
+package main
+
+import (
+	"context"
+	"os/signal"
+	"syscall"
+
+	"myAgent/internal/config"
+	"myAgent/internal/imagegenagent"
+	"myAgent/pkg/comfyui"
+	"myAgent/pkg/kafka"
+	"myAgent/pkg/logger"
+	apmotel "myAgent/pkg/otel"
+	"myAgent/pkg/storage"
+
+	"go.uber.org/zap"
+)
+
+const (
+	topicPromptRefined = "prompt.refined"
+	consumerGroupID    = "image-gen-agent"
+)
+
+func main() {
+	cfg := config.Load()
+	log := logger.New(cfg.LogLevel)
+	defer log.Sync()
+
+	shutdown, err := apmotel.InitTracer(context.Background(), cfg.ServiceName, cfg.JaegerEndpoint)
+	if err != nil {
+		log.Fatal("Failed to initialise tracer", zap.Error(err))
+	}
+	defer shutdown()
+
+	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, consumerGroupID, topicPromptRefined, log)
+	if err != nil {
+		log.Fatal("Failed to create Kafka consumer", zap.Error(err))
+	}
+	defer consumer.Close()
+
+	producer, err := kafka.NewProducer(cfg.KafkaBrokers, log)
+	if err != nil {
+		log.Fatal("Failed to create Kafka producer", zap.Error(err))
+	}
+	defer producer.Close()
+
+	comfyCli := comfyui.NewClient(cfg.ComfyUIBaseURL, log)
+
+	uploader, err := storage.NewS3Uploader(
+		context.Background(),
+		cfg.AWSBucket,
+		cfg.AWSEndpoint,
+		cfg.AWSRegion,
+		cfg.AWSAccessKeyID,
+		cfg.AWSSecretAccessKey,
+		log,
+	)
+	if err != nil {
+		log.Fatal("Failed to initialise S3 uploader", zap.Error(err))
+	}
+
+	w := imagegenagent.NewWorker(consumer, producer, comfyCli, uploader, log)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	log.Info("Starting image-gen-agent",
+		zap.String("topic", topicPromptRefined),
+		zap.String("consumer_group", consumerGroupID),
+		zap.String("comfyui_url", cfg.ComfyUIBaseURL),
+		zap.String("s3_bucket", cfg.AWSBucket),
+	)
+
+	if err := w.Run(ctx); err != nil {
+		log.Fatal("Image-gen-agent worker error", zap.Error(err))
+	}
+
+	log.Info("Image-gen-agent shut down gracefully")
+}
