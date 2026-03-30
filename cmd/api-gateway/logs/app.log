@@ -1,0 +1,2 @@
+{"level":"info","ts":"2026-03-30T20:14:48.074+0530","caller":"api-gateway/main.go:56","msg":"Connected to Redis successfully"}
+{"level":"info","ts":"2026-03-30T20:14:48.075+0530","caller":"api-gateway/main.go:39","msg":"Starting server","port":"8082"}

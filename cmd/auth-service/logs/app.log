@@ -1,0 +1,3 @@
+{"level":"info","ts":"2026-03-30T20:22:24.638+0530","caller":"auth-service/main.go:73","msg":"Connected to Redis successfully"}
+{"level":"info","ts":"2026-03-30T20:22:24.639+0530","caller":"grpcserver/server.go:33","msg":"gRPC listening","addr":":9090"}
+{"level":"info","ts":"2026-03-30T20:22:24.639+0530","caller":"auth-service/main.go:56","msg":"Starting auth HTTP server","port":"8082"}

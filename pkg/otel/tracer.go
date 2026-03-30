@@ -34,8 +34,7 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+		resource.NewSchemaless(
 			semconv.ServiceNameKey.String(serviceName),
 		),
 	)

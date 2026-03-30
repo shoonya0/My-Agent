@@ -18,7 +18,7 @@ type Config struct {
 	LogLevel    string `mapstructure:"LOG_LEVEL" default:"info"`
 	Port        string `mapstructure:"PORT" default:"8080"`
 	GRPCPort    string `mapstructure:"GRPC_PORT" default:"9090"`
-	PostgresDSN string `mapstructure:"POSTGRES_DSN" required:"true"`
+	MySQLDSN string `mapstructure:"MYSQL_DSN" required:"true"`
 
 	RedisAddr     string `mapstructure:"REDIS_ADDR" required:"true"`
 	RedisPassword string `mapstructure:"REDIS_PASSWORD" default:""`

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "myAgent/api/authpb";
+
+// AuthService is the internal gRPC service used by api-gateway to validate
+// JWT tokens on the hot path of every authenticated request.
+service AuthService {
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  string user_id = 1;
+  repeated string roles = 2;
+  int64 expires_at = 3;
+}

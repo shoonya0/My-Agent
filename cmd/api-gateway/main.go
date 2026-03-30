@@ -2,29 +2,31 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"myAgent/internal/apigateway"
 	"myAgent/internal/config"
 	"myAgent/pkg/httpserver"
+	"myAgent/pkg/logger"
 	"myAgent/pkg/model"
 	apmotel "myAgent/pkg/otel"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.uber.org/zap"
 )
 
 func main() {
 	cfg := config.Load()
+	log := logger.New(cfg.LogLevel)
+	defer log.Sync()
 
 	shutdown, err := apmotel.InitTracer(context.Background(), cfg.ServiceName, cfg.JaegerEndpoint)
 	if err != nil {
-		log.Fatalf("Failed to initialise tracer: %v", err)
+		log.Fatal("Failed to initialise tracer", zap.Error(err))
 	}
 	defer shutdown()
 
-	rdb := InitRedis(cfg)
+	rdb := InitRedis(cfg, log)
 	defer rdb.Close()
 
 	r := gin.Default()
@@ -34,12 +36,13 @@ func main() {
 	handler := apigateway.NewGatewayHandler(cfg, rdb)
 	handler.RegisterRoutes(r)
 
+	log.Info("Starting server", zap.String("port", cfg.Port))
 	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
-		log.Fatalf("Server error: %v", err)
+		log.Fatal("Server error", zap.Error(err))
 	}
 }
 
-func InitRedis(cfg *model.Config) *redis.Client {
+func InitRedis(cfg *model.Config, log *zap.Logger) *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,
@@ -47,10 +50,10 @@ func InitRedis(cfg *model.Config) *redis.Client {
 	})
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Fatal("Failed to connect to Redis: ", err)
+		log.Fatal("Failed to connect to Redis", zap.Error(err))
 	}
 
-	fmt.Println("Connected to Redis successfully!")
+	log.Info("Connected to Redis successfully")
 
 	return rdb
 }
