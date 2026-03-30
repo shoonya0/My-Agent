@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"myAgent/internal/config"
+	"myAgent/internal/middleware"
 	"myAgent/pkg/model"
 
 	"github.com/gin-gonic/gin"
@@ -26,9 +27,14 @@ func main() {
 
 	// start Gin server
 	r := gin.Default()
-	fmt.Printf("config loaded: %+v\n", cfg)
 
-	r.Run(":" + cfg.Port)
+	routes(r)
+
+	fmt.Println("Listening on http://localhost" + cfg.Port + "\n")
+
+	if err := r.Run(":" + cfg.Port); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
 
 func InitRedis(cfg model.Config) *redis.Client {
@@ -46,4 +52,28 @@ func InitRedis(cfg model.Config) *redis.Client {
 	fmt.Println("Connected to Redis successfully!")
 
 	return rdb
+}
+
+func routes(r *gin.Engine) {
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"message": "OK"})
+	})
+
+	public := r.Group("/api")
+	public.POST("/register", func(c *gin.Context) {
+		c.JSON(200, gin.H{"message": "OK"})
+	})
+
+	protected := r.Group("/api/v1")
+	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret, RedisClient))
+	{
+		protected.GET("/me", func(c *gin.Context) {
+			user := middleware.CurrentUser(c)
+			c.JSON(200, gin.H{
+				"user_id": user.UserID,
+				"roles":   user.Roles,
+				"email":   user.Email,
+			})
+		})
+	}
 }
