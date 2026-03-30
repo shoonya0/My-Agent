@@ -3,17 +3,16 @@ package main
 import (
 	"context"
 
-	"myAgent/internal/auth"
 	"myAgent/internal/config"
-	"myAgent/pkg/grpcserver"
+	"myAgent/internal/orchestrator"
 	"myAgent/pkg/httpserver"
+	"myAgent/pkg/kafka"
+	"myAgent/pkg/llm"
 	"myAgent/pkg/logger"
-	"myAgent/pkg/model"
 	"myAgent/pkg/mysql"
 	apmotel "myAgent/pkg/otel"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.uber.org/zap"
 )
@@ -35,41 +34,25 @@ func main() {
 	}
 	defer db.Close()
 
-	rdb := initRedis(cfg, log)
-	defer rdb.Close()
-
-	repo := auth.NewRepository(db)
-	svc := auth.NewService(repo, rdb, cfg.JWTSecret, log)
-	h := auth.NewHandler(svc, log)
-
-	grpcSrv, err := grpcserver.Start(cfg.GRPCPort, h.GRPCRegistrar(), log)
+	producer, err := kafka.NewProducer(cfg.KafkaBrokers, log)
 	if err != nil {
-		log.Fatal("Failed to start gRPC server", zap.Error(err))
+		log.Fatal("Failed to create Kafka producer", zap.Error(err))
 	}
-	defer grpcSrv.GracefulStop()
+	defer producer.Close()
+
+	llmClient := llm.NewClient(cfg.OpenAIKey, cfg.OrchestratorModel, log)
+
+	repo := orchestrator.NewRepository(db)
+	svc := orchestrator.NewService(repo, producer, llmClient, log)
+	h := orchestrator.NewHandler(svc, log)
 
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
 	r.Use(otelgin.Middleware(cfg.ServiceName))
 	h.RegisterRoutes(r)
 
-	log.Info("Starting auth HTTP server", zap.String("port", cfg.Port))
+	log.Info("Starting orchestrator HTTP server", zap.String("port", cfg.Port))
 	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
 		log.Fatal("HTTP server error", zap.Error(err))
 	}
-}
-
-func initRedis(cfg *model.Config, log *zap.Logger) *redis.Client {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
-
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Fatal("Failed to connect to Redis", zap.Error(err))
-	}
-
-	log.Info("Connected to Redis successfully")
-	return rdb
 }
