@@ -2,7 +2,7 @@ package model
 
 import (
 	"context"
-	"mime/multipart"
+	"encoding/json"
 	"time"
 )
 
@@ -58,44 +58,44 @@ type User struct {
 // Job represents one full pipeline execution (table: jobs). Owned by the
 // orchestrator — tracks the lifecycle from submission through distribution.
 type Job struct {
-	ID                string    `json:"id" db:"id"`
-	UserID            string    `json:"user_id" db:"user_id"`
-	Status            string    `json:"status" db:"status"`
-	OriginalPrompt    string    `json:"original_prompt" db:"original_prompt"`
-	RefinedPrompt     string    `json:"refined_prompt" db:"refined_prompt"`
-	OriginalImageURL  string    `json:"original_image_url" db:"original_image_url"`
-	GeneratedImageURL string    `json:"generated_image_url" db:"generated_image_url"`
-	ExecutionPlan     string    `json:"execution_plan" db:"execution_plan"`
-	ErrorMessage      string    `json:"error_message" db:"error_message"`
-	CreatedAt         time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at" db:"updated_at"`
+	ID                string          `json:"id" db:"id"`
+	UserID            string          `json:"user_id" db:"user_id"`
+	Status            string          `json:"status" db:"status"`
+	OriginalPrompt    string          `json:"original_prompt" db:"original_prompt"`
+	RefinedPrompt     string          `json:"refined_prompt" db:"refined_prompt"`
+	OriginalImageURL  string          `json:"original_image_url" db:"original_image_url"`
+	GeneratedImageURL string          `json:"generated_image_url" db:"generated_image_url"`
+	ExecutionPlan     json.RawMessage `json:"execution_plan" db:"execution_plan"`
+	ErrorMessage      string          `json:"error_message" db:"error_message"`
+	CreatedAt         time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at" db:"updated_at"`
 }
 
 // JobStatusHistory is an immutable, append-only audit log of every status
 // transition a job goes through (table: job_status_history).
 type JobStatusHistory struct {
-	ID         string    `json:"id" db:"id"`
-	JobID      string    `json:"job_id" db:"job_id"`
-	FromStatus string    `json:"from_status" db:"from_status"`
-	ToStatus   string    `json:"to_status" db:"to_status"`
-	Service    string    `json:"service" db:"service"`
-	Metadata   string    `json:"metadata" db:"metadata"`
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+	ID         string          `json:"id" db:"id"`
+	JobID      string          `json:"job_id" db:"job_id"`
+	FromStatus string          `json:"from_status" db:"from_status"`
+	ToStatus   string          `json:"to_status" db:"to_status"`
+	Service    string          `json:"service" db:"service"`
+	Metadata   json.RawMessage `json:"metadata" db:"metadata"`
+	CreatedAt  time.Time       `json:"created_at" db:"created_at"`
 }
 
 // PlatformCredential stores per-user OAuth tokens for a connected platform
 // (table: platform_credentials). Tokens are encrypted at rest using AES-256-GCM.
 type PlatformCredential struct {
-	ID             string    `json:"id" db:"id"`
-	UserID         string    `json:"user_id" db:"user_id"`
-	Platform       string    `json:"platform" db:"platform"`
-	AccessToken    string    `json:"access_token" db:"access_token"`
-	RefreshToken   string    `json:"refresh_token" db:"refresh_token"`
-	TokenExpiry    time.Time `json:"token_expiry" db:"token_expiry"`
-	Scopes         []string  `json:"scopes" db:"scopes"`
-	PlatformUserID string    `json:"platform_user_id" db:"platform_user_id"`
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	ID              string     `json:"id" db:"id"`
+	UserID          string     `json:"user_id" db:"user_id"`
+	Platform        string     `json:"platform" db:"platform"`
+	AccessTokenEnc  []byte     `json:"-" db:"access_token_enc"`
+	RefreshTokenEnc []byte     `json:"-" db:"refresh_token_enc"`
+	TokenExpiry     *time.Time `json:"token_expiry" db:"token_expiry"`
+	Scopes          []string   `json:"scopes" db:"scopes"`
+	PlatformUserID  string     `json:"platform_user_id" db:"platform_user_id"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // PostResult records the outcome of a single posting attempt per platform per
@@ -114,15 +114,31 @@ type PostResult struct {
 }
 
 // ---------------------------------------------------------------------------
+// Job Status Lifecycle
+// ---------------------------------------------------------------------------
+
+const (
+	JobStatusPending          = "pending"
+	JobStatusRefining         = "refining"
+	JobStatusGenerating       = "generating"
+	JobStatusAwaitingApproval = "awaiting_approval"
+	JobStatusApproved         = "approved"
+	JobStatusRejected         = "rejected"
+	JobStatusDistributing     = "distributing"
+	JobStatusDone             = "done"
+	JobStatusFailed           = "failed"
+)
+
+// ---------------------------------------------------------------------------
 // HTTP Request / Response Contracts
 // ---------------------------------------------------------------------------
 
 // SubmitJobRequest is the payload for POST /api/v1/jobs (multipart/form-data).
+// The image file is handled separately by the handler via c.Request.FormFile.
 type SubmitJobRequest struct {
-	Image     multipart.File `form:"image" validate:"required"`
-	Prompt    string         `form:"prompt" validate:"required,max=1000"`
-	Platforms []string       `form:"platforms" validate:"required,min=1,dive,oneof=instagram whatsapp discord telegram youtube slack"`
-	Caption   string         `form:"caption" validate:"max=2200"`
+	Prompt    string   `form:"prompt" json:"prompt" validate:"required,max=1000"`
+	Platforms []string `form:"platforms" json:"platforms" validate:"required,min=1,dive,oneof=instagram whatsapp discord telegram youtube slack"`
+	Caption   string   `form:"caption" json:"caption" validate:"max=2200"`
 }
 
 // SubmitJobResponse is returned after a job is accepted into the pipeline.

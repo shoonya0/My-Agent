@@ -8,29 +8,30 @@ import (
 	"myAgent/internal/config"
 	"myAgent/pkg/httpserver"
 	"myAgent/pkg/model"
+	apmotel "myAgent/pkg/otel"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-)
-
-var (
-	RedisClient *redis.Client
-	cfg         model.Config
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 func main() {
+	cfg := config.Load()
 
-	// load config
-	cfg = config.Load()
+	shutdown, err := apmotel.InitTracer(context.Background(), cfg.ServiceName, cfg.JaegerEndpoint)
+	if err != nil {
+		log.Fatalf("Failed to initialise tracer: %v", err)
+	}
+	defer shutdown()
 
-	// builds Redis client
-	RedisClient = InitRedis(cfg)
+	rdb := InitRedis(cfg)
+	defer rdb.Close()
 
-	// start Gin server
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
+	r.Use(otelgin.Middleware(cfg.ServiceName))
 
-	handler := apigateway.NewGatewayHandler(cfg, RedisClient)
+	handler := apigateway.NewGatewayHandler(cfg, rdb)
 	handler.RegisterRoutes(r)
 
 	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
@@ -38,7 +39,7 @@ func main() {
 	}
 }
 
-func InitRedis(cfg model.Config) *redis.Client {
+func InitRedis(cfg *model.Config) *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,

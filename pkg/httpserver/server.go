@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,7 +26,7 @@ func Start(addr string, handler http.Handler) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		fmt.Printf("Listening on http://localhost%s\n", addr)
+		log.Printf("Listening on http://localhost%s", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -37,7 +38,7 @@ func Start(addr string, handler http.Handler) error {
 
 	select {
 	case sig := <-quit:
-		fmt.Printf("\nReceived %s, shutting down gracefully...\n", sig)
+		log.Printf("Received %s, shutting down gracefully...", sig)
 	case err := <-errCh:
 		return fmt.Errorf("server error: %w", err)
 	}
@@ -49,6 +50,6 @@ func Start(addr string, handler http.Handler) error {
 		return fmt.Errorf("forced shutdown: %w", err)
 	}
 
-	fmt.Println("Server stopped cleanly")
+	log.Println("Server stopped cleanly")
 	return nil
 }

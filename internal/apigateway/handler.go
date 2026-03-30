@@ -10,14 +10,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const maxImageSize = 20 << 20 // 20 MB
+
 // GatewayHandler holds dependencies for all api-gateway HTTP handlers.
 type GatewayHandler struct {
-	cfg model.Config
+	cfg *model.Config
 	rdb *redis.Client
 }
 
 // NewGatewayHandler constructs a GatewayHandler with the required dependencies.
-func NewGatewayHandler(cfg model.Config, rdb *redis.Client) *GatewayHandler {
+func NewGatewayHandler(cfg *model.Config, rdb *redis.Client) *GatewayHandler {
 	return &GatewayHandler{
 		cfg: cfg,
 		rdb: rdb,
@@ -69,17 +71,35 @@ func (h *GatewayHandler) Me(c *gin.Context) {
 
 // SubmitJob accepts an image + prompt and kicks off the editing pipeline.
 func (h *GatewayHandler) SubmitJob(c *gin.Context) {
-	var req model.SubmitJobRequest
+	file, header, err := c.Request.FormFile("image")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image file is required"})
+		return
+	}
+	defer file.Close()
 
+	if header.Size > maxImageSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image must be under 20MB"})
+		return
+	}
+
+	ct := header.Header.Get("Content-Type")
+	if ct != "image/png" && ct != "image/jpeg" && ct != "image/webp" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image must be png, jpeg, or webp"})
+		return
+	}
+
+	var req model.SubmitJobRequest
 	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// TODO: upload image to S3, create Job record, publish Kafka event
+	_ = file // will be read for S3 upload
 	c.JSON(http.StatusAccepted, model.SubmitJobResponse{
 		JobID:  "", // will be generated
-		Status: "pending",
+		Status: model.JobStatusPending,
 	})
 }
 
@@ -105,9 +125,9 @@ func (h *GatewayHandler) ApproveJob(c *gin.Context) {
 	}
 
 	// TODO: publish image.approved Kafka event
-	c.JSON(http.StatusOK, model.JobActionResponse{
+	c.JSON(http.StatusAccepted, model.JobActionResponse{
 		JobID:   jobID,
-		Status:  "distributing",
+		Status:  model.JobStatusDistributing,
 		Message: "job approved",
 	})
 }
@@ -125,7 +145,7 @@ func (h *GatewayHandler) RejectJob(c *gin.Context) {
 	// TODO: update job status in DB
 	c.JSON(http.StatusOK, model.JobActionResponse{
 		JobID:   jobID,
-		Status:  "rejected",
+		Status:  model.JobStatusRejected,
 		Message: "job rejected",
 	})
 }

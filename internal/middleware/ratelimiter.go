@@ -19,6 +19,17 @@ const (
 	headerRetryAfter = "Retry-After"
 )
 
+// rateLimitScript atomically increments the counter and sets TTL only on
+// key creation — prevents the TTL-less key leak that a non-atomic
+// INCR + EXPIRE sequence can cause if the process crashes between them.
+var rateLimitScript = redis.NewScript(`
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`)
+
 // RateLimiter returns a Gin middleware that enforces a per-minute request cap
 // using Redis INCR on key ratelimit:{identity}:{unix_minute}.
 // For authenticated routes (placed after JWTMiddleware), the identity is the
@@ -29,14 +40,12 @@ func RateLimiter(rdb *redis.Client, maxPerMinute int) gin.HandlerFunc {
 		minute := time.Now().UTC().Unix() / 60
 		key := fmt.Sprintf("ratelimit:%s:%d", identity, minute)
 
-		count, err := rdb.Incr(c.Request.Context(), key).Result()
+		count, err := rateLimitScript.Run(
+			c.Request.Context(), rdb, []string{key}, int(rateLimitTTL.Seconds()),
+		).Int64()
 		if err != nil {
 			c.Next()
 			return
-		}
-
-		if count == 1 {
-			rdb.Expire(c.Request.Context(), key, rateLimitTTL)
 		}
 
 		remaining := max(0, int64(maxPerMinute)-count)
