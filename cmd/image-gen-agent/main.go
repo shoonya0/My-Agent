@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	serviceName        = "image-gen-agent"
 	topicPromptRefined = "prompt.refined"
 	consumerGroupID    = "image-gen-agent"
 )
@@ -26,7 +27,7 @@ func main() {
 	log := logger.New(cfg.LogLevel)
 	defer log.Sync()
 
-	shutdown, err := apmotel.InitTracer(context.Background(), cfg.ServiceName, cfg.JaegerEndpoint)
+	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
 		log.Fatal("Failed to initialise tracer", zap.Error(err))
 	}

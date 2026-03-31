@@ -19,6 +19,7 @@ import (
 )
 
 const (
+	serviceName         = "approval-service"
 	topicImageGenerated = "image.generated"
 	consumerGroupID     = "approval-service"
 )
@@ -28,7 +29,7 @@ func main() {
 	log := logger.New(cfg.LogLevel)
 	defer log.Sync()
 
-	shutdown, err := apmotel.InitTracer(context.Background(), cfg.ServiceName, cfg.JaegerEndpoint)
+	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
 		log.Fatal("Failed to initialise tracer", zap.Error(err))
 	}

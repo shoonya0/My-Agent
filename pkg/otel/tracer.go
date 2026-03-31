@@ -24,6 +24,7 @@ const shutdownTimeout = 5 * time.Second
 // spans before the process exits. Returns an error if the exporter or
 // resource setup fails.
 func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown func(), err error) {
+	// It uses gRPC to send trace data to the specified endpoint
 	exporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(endpoint),
 		otlptracegrpc.WithInsecure(),
@@ -32,6 +33,7 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 		return nil, fmt.Errorf("otel: create OTLP exporter: %w", err)
 	}
 
+	// It creates a resource with the service name
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewSchemaless(
@@ -42,17 +44,23 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 		return nil, fmt.Errorf("otel: create resource: %w", err)
 	}
 
+	// Batcher groups them together and sends them in chunks
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
+		// It sets the resource with the service name
 		sdktrace.WithResource(res),
 	)
 
+	// It sets the tracer provider and the text map propagator
 	otel.SetTracerProvider(tp)
+	// ensures that if Service A calls Service B, they both show up in the same single trace
+	// This allows the trace context and baggage to be propagated through the system
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
 
+	// It returns a shutdown function that flushes pending spans before the process exits
 	shutdown = func() {
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()

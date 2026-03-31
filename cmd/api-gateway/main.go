@@ -15,12 +15,14 @@ import (
 	"go.uber.org/zap"
 )
 
+const serviceName = "api-gateway"
+
 func main() {
 	cfg := config.Load()
 	log := logger.New(cfg.LogLevel)
 	defer log.Sync()
 
-	shutdown, err := apmotel.InitTracer(context.Background(), cfg.ServiceName, cfg.JaegerEndpoint)
+	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
 		log.Fatal("Failed to initialise tracer", zap.Error(err))
 	}
@@ -31,7 +33,8 @@ func main() {
 
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
-	r.Use(otelgin.Middleware(cfg.ServiceName))
+	// It instruments the Gin HTTP server with OpenTelemetry it's used to track the HTTP requests and responses
+	r.Use(otelgin.Middleware(serviceName))
 
 	handler := apigateway.NewGatewayHandler(cfg, rdb)
 	handler.RegisterRoutes(r)

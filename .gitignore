@@ -1,2 +1,4 @@
 /config.env
 .cursor/
+*.exe
+**/logs/

@@ -18,26 +18,31 @@ type Config struct {
 	LogLevel    string `mapstructure:"LOG_LEVEL" default:"info"`
 	Port        string `mapstructure:"PORT" default:"8080"`
 	GRPCPort    string `mapstructure:"GRPC_PORT" default:"9090"`
-	MySQLDSN string `mapstructure:"MYSQL_DSN" required:"true"`
+	MySQLDSN    string `mapstructure:"MYSQL_DSN" required:"true"`
 
 	RedisAddr     string `mapstructure:"REDIS_ADDR" required:"true"`
 	RedisPassword string `mapstructure:"REDIS_PASSWORD" default:""`
 	RedisDB       int    `mapstructure:"REDIS_DB" default:"0"`
 
-	JWTSecret         string `mapstructure:"JWT_SECRET" required:"true"`
-	KafkaBrokers      string `mapstructure:"KAFKA_BROKERS" required:"true"`
-	OpenAIKey         string `mapstructure:"OPENAI_API_KEY" required:"true"`
-	OrchestratorModel string `mapstructure:"ORCHESTRATOR_MODEL" default:"gpt-4o"`
-	PromptAgentModel  string `mapstructure:"PROMPT_AGENT_MODEL" default:"gpt-4o"`
-	ComfyUIBaseURL    string `mapstructure:"COMFYUI_BASE_URL" required:"true"`
-	AWSBucket          string `mapstructure:"AWS_BUCKET" required:"true"`
-	AWSEndpoint        string `mapstructure:"AWS_ENDPOINT" optional:"true"`
-	AWSRegion          string `mapstructure:"AWS_REGION" default:"us-east-1"`
-	AWSAccessKeyID     string `mapstructure:"AWS_ACCESS_KEY_ID" optional:"true"`
-	AWSSecretAccessKey string `mapstructure:"AWS_SECRET_ACCESS_KEY" optional:"true"`
-	JaegerEndpoint    string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
-	EncryptionKey          string `mapstructure:"ENCRYPTION_KEY" required:"true"`
+	JWTSecret               string `mapstructure:"JWT_SECRET" required:"true"`
+	KafkaBrokers            string `mapstructure:"KAFKA_BROKERS" required:"true"`
+	OpenAIKey               string `mapstructure:"OPENAI_API_KEY" required:"true"`
+	OrchestratorModel       string `mapstructure:"ORCHESTRATOR_MODEL" default:"gpt-4o"`
+	PromptAgentModel        string `mapstructure:"PROMPT_AGENT_MODEL" default:"gpt-4o"`
+	ComfyUIBaseURL          string `mapstructure:"COMFYUI_BASE_URL" required:"true"`
+	AWSBucket               string `mapstructure:"AWS_BUCKET" required:"true"`
+	AWSEndpoint             string `mapstructure:"AWS_ENDPOINT" optional:"true"`
+	AWSRegion               string `mapstructure:"AWS_REGION" default:"us-east-1"`
+	AWSAccessKeyID          string `mapstructure:"AWS_ACCESS_KEY_ID" optional:"true"`
+	AWSSecretAccessKey      string `mapstructure:"AWS_SECRET_ACCESS_KEY" optional:"true"`
+	JaegerEndpoint          string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
+	EncryptionKey           string `mapstructure:"ENCRYPTION_KEY" required:"true"`
 	PromptAgentSystemPrompt string `mapstructure:"PROMPT_AGENT_SYSTEM_PROMPT" optional:"true"`
+
+	InstagramToken string `mapstructure:"INSTAGRAM_TOKEN" optional:"true"`
+	WhatsAppToken  string `mapstructure:"WHATSAPP_TOKEN" optional:"true"`
+	DiscordWebhook string `mapstructure:"DISCORD_WEBHOOK" optional:"true"`
+	TelegramToken  string `mapstructure:"TELEGRAM_TOKEN" optional:"true"`
 }
 
 // ---------------------------------------------------------------------------
@@ -351,10 +356,17 @@ type PostRequest struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
+// PublishResult carries platform-specific identifiers returned by a
+// successful Publish call, used to populate PostResult records.
+type PublishResult struct {
+	PlatformPostID string `json:"platform_post_id"`
+	PlatformURL    string `json:"platform_url"`
+}
+
 // PlatformConnector defines the interface every social-platform connector
 // must implement.
 type PlatformConnector interface {
-	Publish(ctx context.Context, req PostRequest) error
+	Publish(ctx context.Context, req PostRequest) (*PublishResult, error)
 	Validate(ctx context.Context) error
 	Name() string
 }

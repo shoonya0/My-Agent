@@ -18,12 +18,14 @@ import (
 	"go.uber.org/zap"
 )
 
+const serviceName = "auth-service"
+
 func main() {
 	cfg := config.Load()
 	log := logger.New(cfg.LogLevel)
 	defer log.Sync()
 
-	shutdown, err := apmotel.InitTracer(context.Background(), cfg.ServiceName, cfg.JaegerEndpoint)
+	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
 		log.Fatal("Failed to initialise tracer", zap.Error(err))
 	}
@@ -50,7 +52,7 @@ func main() {
 
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
-	r.Use(otelgin.Middleware(cfg.ServiceName))
+	r.Use(otelgin.Middleware(serviceName))
 	h.RegisterRoutes(r)
 
 	log.Info("Starting auth HTTP server", zap.String("port", cfg.Port))
