@@ -18,6 +18,7 @@ const ServiceName = "auth.v1.AuthService"
 // AuthServiceServer is the server API for AuthService.
 type AuthServiceServer interface {
 	ValidateToken(ctx context.Context, req *model.ValidateTokenRequest) (*model.Claims, error)
+	Register(ctx context.Context, req *model.RegisterUserRequest) (*model.TokenResponse, error)
 }
 
 // RegisterAuthServiceServer registers the implementation srv with the given
@@ -35,6 +36,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ValidateToken",
 			Handler:    _AuthService_ValidateToken_Handler,
+		},
+		{
+			MethodName: "Register",
+			Handler:    _AuthService_Register_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -59,9 +64,28 @@ func _AuthService_ValidateToken_Handler(srv any, ctx context.Context, dec func(a
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_Register_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	in := new(model.RegisterUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).Register(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/" + ServiceName + "/Register",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(AuthServiceServer).Register(ctx, req.(*model.RegisterUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthServiceClient is the client API for AuthService.
 type AuthServiceClient interface {
 	ValidateToken(ctx context.Context, in *model.ValidateTokenRequest, opts ...grpc.CallOption) (*model.Claims, error)
+	Register(ctx context.Context, in *model.RegisterUserRequest, opts ...grpc.CallOption) (*model.TokenResponse, error)
 }
 
 type authServiceClient struct {
@@ -80,6 +104,16 @@ func (c *authServiceClient) ValidateToken(ctx context.Context, in *model.Validat
 	out := new(model.Claims)
 	opts = append([]grpc.CallOption{grpc.CallContentSubtype("json")}, opts...)
 	err := c.cc.Invoke(ctx, "/"+ServiceName+"/ValidateToken", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) Register(ctx context.Context, in *model.RegisterUserRequest, opts ...grpc.CallOption) (*model.TokenResponse, error) {
+	out := new(model.TokenResponse)
+	opts = append([]grpc.CallOption{grpc.CallContentSubtype("json")}, opts...)
+	err := c.cc.Invoke(ctx, "/"+ServiceName+"/Register", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}

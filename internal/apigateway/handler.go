@@ -3,26 +3,31 @@ package apigateway
 import (
 	"net/http"
 
+	"myAgent/api/authpb"
 	"myAgent/internal/middleware"
 	"myAgent/pkg/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const maxImageSize = 20 << 20 // 20 MB
 
 // GatewayHandler holds dependencies for all api-gateway HTTP handlers.
 type GatewayHandler struct {
-	cfg *model.Config
-	rdb *redis.Client
+	cfg        *model.Config
+	rdb        *redis.Client
+	authClient authpb.AuthServiceClient
 }
 
 // NewGatewayHandler constructs a GatewayHandler with the required dependencies.
-func NewGatewayHandler(cfg *model.Config, rdb *redis.Client) *GatewayHandler {
+func NewGatewayHandler(cfg *model.Config, rdb *redis.Client, authClient authpb.AuthServiceClient) *GatewayHandler {
 	return &GatewayHandler{
-		cfg: cfg,
-		rdb: rdb,
+		cfg:        cfg,
+		rdb:        rdb,
+		authClient: authClient,
 	}
 }
 
@@ -53,10 +58,36 @@ func (h *GatewayHandler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-// Register handles new user registration.
+type registerGatewayRequest struct {
+	Email       string `json:"email" binding:"required,email"`
+	Password    string `json:"password" binding:"required,min=8"`
+	DisplayName string `json:"display_name" binding:"required"`
+}
+
+// Register handles new user registration by forwarding to auth-service via gRPC.
 func (h *GatewayHandler) Register(c *gin.Context) {
-	// TODO: implement registration logic in auth-service and forward via gRPC
-	c.JSON(http.StatusOK, gin.H{"message": "register endpoint"})
+	var req registerGatewayRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.authClient.Register(c.Request.Context(), &model.RegisterUserRequest{
+		Email:       req.Email,
+		Password:    req.Password,
+		DisplayName: req.DisplayName,
+	})
+	if err != nil {
+		st, ok := status.FromError(err)
+		if ok && st.Code() == codes.AlreadyExists {
+			c.JSON(http.StatusConflict, gin.H{"error": st.Message()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "registration failed"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, resp)
 }
 
 // Me returns the authenticated user's profile from the JWT claims.

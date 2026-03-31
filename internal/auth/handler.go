@@ -46,6 +46,24 @@ func (h *Handler) ValidateToken(ctx context.Context, req *model.ValidateTokenReq
 	return claims, nil
 }
 
+// Register implements authpb.AuthServiceServer. Called by api-gateway to
+// create a new user account and return a token pair.
+func (h *Handler) Register(ctx context.Context, req *model.RegisterUserRequest) (*model.TokenResponse, error) {
+	resp, err := h.svc.Register(ctx, RegisterRequest{
+		Email:       req.Email,
+		Password:    req.Password,
+		DisplayName: req.DisplayName,
+	})
+	if err != nil {
+		if errors.Is(err, ErrEmailTaken) {
+			return nil, status.Errorf(codes.AlreadyExists, "email already registered")
+		}
+		h.log.Error("Register gRPC failed", zap.Error(err))
+		return nil, status.Errorf(codes.Internal, "registration failed")
+	}
+	return resp, nil
+}
+
 // RegisterRoutes attaches auth HTTP endpoints to the given Gin engine.
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/health", h.health)

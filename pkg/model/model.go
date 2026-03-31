@@ -35,6 +35,7 @@ type Config struct {
 	AWSRegion               string `mapstructure:"AWS_REGION" default:"us-east-1"`
 	AWSAccessKeyID          string `mapstructure:"AWS_ACCESS_KEY_ID" optional:"true"`
 	AWSSecretAccessKey      string `mapstructure:"AWS_SECRET_ACCESS_KEY" optional:"true"`
+	AuthServiceAddr         string `mapstructure:"AUTH_SERVICE_ADDR" default:"localhost:9090"`
 	JaegerEndpoint          string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
 	EncryptionKey           string `mapstructure:"ENCRYPTION_KEY" required:"true"`
 	PromptAgentSystemPrompt string `mapstructure:"PROMPT_AGENT_SYSTEM_PROMPT" optional:"true"`
@@ -227,6 +228,14 @@ type Claims struct {
 	UserID    string   `protobuf:"bytes,1" json:"user_id"`
 	Roles     []string `protobuf:"bytes,2" json:"roles"`
 	ExpiresAt int64    `protobuf:"varint,3" json:"expires_at"`
+}
+
+// RegisterUserRequest is the gRPC request from api-gateway to auth-service
+// for user registration.
+type RegisterUserRequest struct {
+	Email       string `protobuf:"bytes,1" json:"email"`
+	Password    string `protobuf:"bytes,2" json:"password"`
+	DisplayName string `protobuf:"bytes,3" json:"display_name"`
 }
 
 // ---------------------------------------------------------------------------
