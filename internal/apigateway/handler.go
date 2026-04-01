@@ -72,7 +72,7 @@ func (h *GatewayHandler) Register(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.authClient.Register(c.Request.Context(), &model.RegisterUserRequest{
+	pbResp, err := h.authClient.Register(c.Request.Context(), &authpb.RegisterUserRequest{
 		Email:       req.Email,
 		Password:    req.Password,
 		DisplayName: req.DisplayName,
@@ -87,7 +87,7 @@ func (h *GatewayHandler) Register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, protoToTokenResponse(pbResp))
 }
 
 // Me returns the authenticated user's profile from the JWT claims.
@@ -179,4 +179,17 @@ func (h *GatewayHandler) RejectJob(c *gin.Context) {
 		Status:  model.JobStatusRejected,
 		Message: "job rejected",
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Proto → model converter (gRPC client boundary)
+// ---------------------------------------------------------------------------
+
+func protoToTokenResponse(pb *authpb.TokenResponse) *model.TokenResponse {
+	return &model.TokenResponse{
+		AccessToken:  pb.GetAccessToken(),
+		RefreshToken: pb.GetRefreshToken(),
+		ExpiresIn:    int(pb.GetExpiresIn()),
+		TokenType:    pb.GetTokenType(),
+	}
 }

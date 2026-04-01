@@ -33,9 +33,10 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 		return nil, fmt.Errorf("otel: create OTLP exporter: %w", err)
 	}
 
-	// It creates a resource with the service name
 	res, err := resource.Merge(
+		// It creates a default resource
 		resource.Default(),
+		// It creates a schemaless resource with the service name
 		resource.NewSchemaless(
 			semconv.ServiceNameKey.String(serviceName),
 		),
@@ -44,8 +45,8 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 		return nil, fmt.Errorf("otel: create resource: %w", err)
 	}
 
-	// Batcher groups them together and sends them in chunks
 	tp := sdktrace.NewTracerProvider(
+		// Batcher groups them together and sends them in chunks
 		sdktrace.WithBatcher(exporter),
 		// It sets the resource with the service name
 		sdktrace.WithResource(res),

@@ -19,6 +19,7 @@ import (
 
 // Handler holds dependencies for auth HTTP and gRPC endpoints.
 type Handler struct {
+	authpb.UnimplementedAuthServiceServer
 	svc Service
 	log *zap.Logger
 }
@@ -36,23 +37,25 @@ func (h *Handler) GRPCRegistrar() grpcserver.Registrar {
 	}
 }
 
-// ValidateToken implements authpb.AuthServiceServer. Called by api-gateway
-// on every authenticated request to verify the JWT.
-func (h *Handler) ValidateToken(ctx context.Context, req *model.ValidateTokenRequest) (*model.Claims, error) {
-	claims, err := h.svc.ValidateToken(ctx, req.Token)
+// ---------------------------------------------------------------------------
+// gRPC handlers — thin converters between proto types and domain types
+// ---------------------------------------------------------------------------
+
+// ValidateToken implements authpb.AuthServiceServer.
+func (h *Handler) ValidateToken(ctx context.Context, req *authpb.ValidateTokenRequest) (*authpb.ValidateTokenResponse, error) {
+	claims, err := h.svc.ValidateToken(ctx, req.GetToken())
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "%v", err)
 	}
-	return claims, nil
+	return claimsToProto(claims), nil
 }
 
-// Register implements authpb.AuthServiceServer. Called by api-gateway to
-// create a new user account and return a token pair.
-func (h *Handler) Register(ctx context.Context, req *model.RegisterUserRequest) (*model.TokenResponse, error) {
+// Register implements authpb.AuthServiceServer.
+func (h *Handler) Register(ctx context.Context, req *authpb.RegisterUserRequest) (*authpb.TokenResponse, error) {
 	resp, err := h.svc.Register(ctx, RegisterRequest{
-		Email:       req.Email,
-		Password:    req.Password,
-		DisplayName: req.DisplayName,
+		Email:       req.GetEmail(),
+		Password:    req.GetPassword(),
+		DisplayName: req.GetDisplayName(),
 	})
 	if err != nil {
 		if errors.Is(err, ErrEmailTaken) {
@@ -61,8 +64,33 @@ func (h *Handler) Register(ctx context.Context, req *model.RegisterUserRequest) 
 		h.log.Error("Register gRPC failed", zap.Error(err))
 		return nil, status.Errorf(codes.Internal, "registration failed")
 	}
-	return resp, nil
+	return tokenResponseToProto(resp), nil
 }
+
+// ---------------------------------------------------------------------------
+// Proto ↔ model converters (gRPC boundary only)
+// ---------------------------------------------------------------------------
+
+func claimsToProto(c *model.Claims) *authpb.ValidateTokenResponse {
+	return &authpb.ValidateTokenResponse{
+		UserId:    c.UserID,
+		Roles:     c.Roles,
+		ExpiresAt: c.ExpiresAt,
+	}
+}
+
+func tokenResponseToProto(r *model.TokenResponse) *authpb.TokenResponse {
+	return &authpb.TokenResponse{
+		AccessToken:  r.AccessToken,
+		RefreshToken: r.RefreshToken,
+		ExpiresIn:    int32(r.ExpiresIn),
+		TokenType:    r.TokenType,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HTTP routes
+// ---------------------------------------------------------------------------
 
 // RegisterRoutes attaches auth HTTP endpoints to the given Gin engine.
 func (h *Handler) RegisterRoutes(r *gin.Engine) {

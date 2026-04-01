@@ -58,6 +58,7 @@ func NewService(repo Repository, producer kafka.Producer, llmClient llm.Client, 
 // SubmitJob creates a job record, calls the LLM to parse the user's intent
 // into an ExecutionPlan, then publishes a PromptRefinementJob event to Kafka.
 func (s *orchestratorService) SubmitJob(ctx context.Context, userID string, req SubmitRequest) (*model.SubmitJobResponse, error) {
+	// It starts a new span for the SubmitJob operation means it will be used to track the SubmitJob operation
 	ctx, span := otel.Tracer(tracerName).Start(ctx, "orchestrator.SubmitJob")
 	defer span.End()
 

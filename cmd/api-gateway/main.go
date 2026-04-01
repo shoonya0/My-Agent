@@ -22,51 +22,6 @@ import (
 
 const serviceName = "api-gateway"
 
-func main() {
-	cfg := config.Load()
-	log := logger.New(cfg.LogLevel)
-	defer log.Sync()
-
-	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
-	if err != nil {
-		log.Fatal("Failed to initialise tracer", zap.Error(err))
-	}
-	defer shutdown()
-
-	rdb := InitRedis(cfg, log)
-	defer rdb.Close()
-
-	authConn := dialAuthService(cfg, log)
-	defer authConn.Close()
-	authClient := authpb.NewAuthServiceClient(authConn)
-
-	r := gin.Default()
-	r.SetTrustedProxies([]string{"127.0.0.1"})
-	// It instruments the Gin HTTP server with OpenTelemetry it's used to track the HTTP requests and responses
-	r.Use(otelgin.Middleware(serviceName))
-
-	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient)
-	handler.RegisterRoutes(r)
-
-	log.Info("Starting server", zap.String("port", cfg.Port))
-	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
-		log.Fatal("Server error", zap.Error(err))
-	}
-}
-
-func dialAuthService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
-	conn, err := grpc.NewClient(
-		cfg.AuthServiceAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-	)
-	if err != nil {
-		log.Fatal("Failed to dial auth-service", zap.String("addr", cfg.AuthServiceAddr), zap.Error(err))
-	}
-	log.Info("Connected to auth-service gRPC", zap.String("addr", cfg.AuthServiceAddr))
-	return conn
-}
-
 func InitRedis(cfg *model.Config, log *zap.Logger) *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
@@ -81,4 +36,56 @@ func InitRedis(cfg *model.Config, log *zap.Logger) *redis.Client {
 	log.Info("Connected to Redis successfully")
 
 	return rdb
+}
+
+// client connection is used to make gRPC calls to the auth-service
+func dialAuthService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
+	// it creates a new client connection to the auth-service
+	conn, err := grpc.NewClient(
+		cfg.AuthServiceAddr,
+		// it uses insecure mode because we are not using TLS this helps us to avoid the need to generate a certificate and key
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// it uses the otelgrpc.NewClientHandler() to track the gRPC calls
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
+	if err != nil {
+		log.Fatal("Failed to dial auth-service", zap.String("addr", cfg.AuthServiceAddr), zap.Error(err))
+	}
+	log.Info("Connected to auth-service gRPC", zap.String("addr", cfg.AuthServiceAddr))
+	return conn
+}
+
+func main() {
+	cfg := config.Load()
+	log := logger.New(cfg.LogLevel)
+	defer log.Sync()
+
+	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
+	if err != nil {
+		log.Fatal("Failed to initialise tracer", zap.Error(err))
+	}
+	defer shutdown()
+
+	rdb := InitRedis(cfg, log)
+	defer rdb.Close()
+
+	// dialAuthService is used to dial the auth-service gRPC server
+	// it returns a grpc.ClientConn that can be used to make gRPC calls to the auth-service
+	authConn := dialAuthService(cfg, log)
+	defer authConn.Close()
+	authClient := authpb.NewAuthServiceClient(authConn)
+
+	r := gin.Default()
+	r.SetTrustedProxies([]string{"127.0.0.1"})
+
+	// It instruments the Gin HTTP server with OpenTelemetry it's used to track the HTTP requests and responses
+	r.Use(otelgin.Middleware(serviceName))
+
+	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient)
+	handler.RegisterRoutes(r)
+
+	log.Info("Starting server", zap.String("port", cfg.Port))
+	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
+		log.Fatal("Server error", zap.Error(err))
+	}
 }

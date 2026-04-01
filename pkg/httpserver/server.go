@@ -18,12 +18,14 @@ const defaultShutdownTimeout = 10 * time.Second
 // and blocks until SIGINT or SIGTERM is received. It then gracefully drains
 // in-flight requests within the shutdown timeout before returning.
 func Start(addr string, handler http.Handler) error {
+	// srv is the HTTP server that will be used to serve the requests
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// errCh is a channel that will be used to send errors from the HTTP server
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("Listening on http://localhost%s", addr)
@@ -33,7 +35,9 @@ func Start(addr string, handler http.Handler) error {
 		close(errCh)
 	}()
 
+	// quit is a channel that will be used to receive signals from the operating system
 	quit := make(chan os.Signal, 1)
+	// signal.Notify is used to notify the channel when the signal is received
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
