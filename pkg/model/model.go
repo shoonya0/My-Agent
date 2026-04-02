@@ -96,16 +96,17 @@ type JobStatusHistory struct {
 // PlatformCredential stores per-user OAuth tokens for a connected platform
 // (table: platform_credentials). Tokens are encrypted at rest using AES-256-GCM.
 type PlatformCredential struct {
-	ID              string     `json:"id" db:"id"`
-	UserID          string     `json:"user_id" db:"user_id"`
-	Platform        string     `json:"platform" db:"platform"`
-	AccessTokenEnc  []byte     `json:"-" db:"access_token_enc"`
-	RefreshTokenEnc []byte     `json:"-" db:"refresh_token_enc"`
-	TokenExpiry     *time.Time `json:"token_expiry" db:"token_expiry"`
-	Scopes          []string   `json:"scopes" db:"scopes"`
-	PlatformUserID  string     `json:"platform_user_id" db:"platform_user_id"`
-	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+	ID              string            `json:"id" db:"id"`
+	UserID          string            `json:"user_id" db:"user_id"`
+	Platform        string            `json:"platform" db:"platform"`
+	AccessTokenEnc  []byte            `json:"-" db:"access_token_enc"`
+	RefreshTokenEnc []byte            `json:"-" db:"refresh_token_enc"`
+	TokenExpiry     *time.Time        `json:"token_expiry" db:"token_expiry"`
+	Scopes          []string          `json:"scopes" db:"scopes"`
+	PlatformUserID  string            `json:"platform_user_id" db:"platform_user_id"`
+	Metadata        map[string]string `json:"metadata" db:"metadata"`
+	CreatedAt       time.Time         `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at" db:"updated_at"`
 }
 
 // PostResult records the outcome of a single posting attempt per platform per
@@ -198,6 +199,38 @@ type GetJobResponse struct {
 	GeneratedImageURL string       `json:"generated_image_url,omitempty"`
 	PostResults       []PostResult `json:"post_results,omitempty"`
 	CreatedAt         time.Time    `json:"created_at"`
+}
+
+// ---------------------------------------------------------------------------
+// Platform Credentials HTTP Contracts
+// ---------------------------------------------------------------------------
+
+// ConnectPlatformRequest is the payload for POST /api/v1/credentials.
+type ConnectPlatformRequest struct {
+	Platform string            `json:"platform" binding:"required,oneof=instagram whatsapp discord telegram"`
+	Token    string            `json:"token" binding:"required"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// UpdatePlatformRequest is the payload for PUT /api/v1/credentials/:platform.
+type UpdatePlatformRequest struct {
+	Token    string            `json:"token" binding:"required"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// PlatformCredentialResponse is the safe (token-masked) view returned to clients.
+type PlatformCredentialResponse struct {
+	Platform       string            `json:"platform"`
+	Connected      bool              `json:"connected"`
+	PlatformUserID string            `json:"platform_user_id,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
+	ConnectedAt    time.Time         `json:"connected_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+}
+
+// ListCredentialsResponse wraps a slice of connected platforms.
+type ListCredentialsResponse struct {
+	Credentials []PlatformCredentialResponse `json:"credentials"`
 }
 
 // AuthCallbackRequest captures the OAuth2 callback query parameters.

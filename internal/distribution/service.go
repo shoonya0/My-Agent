@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"myAgent/internal/credentials"
 	"myAgent/pkg/connectors"
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/model"
@@ -31,6 +32,7 @@ type Service struct {
 	producer kafka.Producer
 	registry *connectors.Registry
 	repo     *Repository
+	credSvc  credentials.Service
 	log      *zap.Logger
 }
 
@@ -40,6 +42,7 @@ func NewService(
 	producer kafka.Producer,
 	registry *connectors.Registry,
 	repo *Repository,
+	credSvc credentials.Service,
 	log *zap.Logger,
 ) *Service {
 	return &Service{
@@ -47,6 +50,7 @@ func NewService(
 		producer: producer,
 		registry: registry,
 		repo:     repo,
+		credSvc:  credSvc,
 		log:      log,
 	}
 }
@@ -89,11 +93,6 @@ func (s *Service) distribute(ctx context.Context, evt model.ImageApprovedEvent) 
 		attribute.Int("platforms.count", len(evt.Platforms)),
 	)
 
-	postReq := model.PostRequest{
-		MediaURL: evt.ImageURL,
-		Caption:  evt.Caption,
-	}
-
 	var (
 		mu      sync.Mutex
 		results []model.PostResult
@@ -102,7 +101,7 @@ func (s *Service) distribute(ctx context.Context, evt model.ImageApprovedEvent) 
 	var g errgroup.Group
 	for _, platform := range evt.Platforms {
 		g.Go(func() error {
-			pr := s.publishToPlatform(ctx, evt, postReq, platform)
+			pr := s.publishToPlatform(ctx, evt, platform)
 			mu.Lock()
 			results = append(results, pr)
 			mu.Unlock()
@@ -146,7 +145,6 @@ func (s *Service) distribute(ctx context.Context, evt model.ImageApprovedEvent) 
 func (s *Service) publishToPlatform(
 	ctx context.Context,
 	evt model.ImageApprovedEvent,
-	req model.PostRequest,
 	platform string,
 ) model.PostResult {
 	pr := model.PostResult{
@@ -167,6 +165,31 @@ func (s *Service) publishToPlatform(
 		pr.Status = "failed"
 		pr.ErrorDetail = err.Error()
 		return pr
+	}
+
+	token, credMeta, err := s.credSvc.GetDecryptedToken(ctx, evt.UserID, platform)
+	if err != nil {
+		s.log.Error("Failed to fetch user credential",
+			zap.String("platform", platform),
+			zap.String("job_id", evt.JobID),
+			zap.String("user_id", evt.UserID),
+			zap.Error(err),
+		)
+		pr.Status = "failed"
+		pr.ErrorDetail = fmt.Sprintf("no credentials: %v", err)
+		return pr
+	}
+
+	metadata := make(map[string]string)
+	for k, v := range credMeta {
+		metadata[k] = v
+	}
+	metadata[platformTokenKey(platform)] = token
+
+	req := model.PostRequest{
+		MediaURL: evt.ImageURL,
+		Caption:  evt.Caption,
+		Metadata: metadata,
 	}
 
 	result, err := connector.Publish(ctx, req)
@@ -209,5 +232,20 @@ func (s *Service) publishJobFailed(ctx context.Context, evt model.ImageApprovedE
 			zap.String("job_id", evt.JobID),
 			zap.Error(err),
 		)
+	}
+}
+
+func platformTokenKey(platform string) string {
+	switch platform {
+	case "instagram":
+		return "instagram_token"
+	case "telegram":
+		return "telegram_token"
+	case "whatsapp":
+		return "whatsapp_token"
+	case "discord":
+		return "discord_webhook_url"
+	default:
+		return platform + "_token"
 	}
 }

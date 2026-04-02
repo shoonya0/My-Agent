@@ -27,6 +27,7 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 	// It uses gRPC to send trace data to the specified endpoint
 	exporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(endpoint),
+		// it uses insecure mode because we are not using TLS this helps us to avoid the need to generate a certificate and key
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
@@ -36,7 +37,7 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 	res, err := resource.Merge(
 		// It creates a default resource
 		resource.Default(),
-		// It creates a schemaless resource with the service name
+		// It creates a schemaless resource with the service name this helps us to add the service name to the trace
 		resource.NewSchemaless(
 			semconv.ServiceNameKey.String(serviceName),
 		),

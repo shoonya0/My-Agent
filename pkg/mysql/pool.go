@@ -13,6 +13,7 @@ import (
 // pings the server to verify connectivity before returning.
 // DSN format: "user:password@tcp(host:port)/dbname?parseTime=true&charset=utf8mb4"
 func NewDB(ctx context.Context, dsn string) (*sql.DB, error) {
+	// it opens a new MySQL connection pool
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: open: %w", err)
@@ -22,6 +23,7 @@ func NewDB(ctx context.Context, dsn string) (*sql.DB, error) {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
+	// it pings the database to verify connectivity
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("mysql: ping: %w", err)

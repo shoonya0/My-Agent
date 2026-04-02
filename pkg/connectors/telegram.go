@@ -47,6 +47,11 @@ func (t *Telegram) Publish(ctx context.Context, req model.PostRequest) (*model.P
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "telegram"))
 
+	token := t.token
+	if override := req.Metadata["telegram_token"]; override != "" {
+		token = override
+	}
+
 	chatID := req.Metadata["telegram_chat_id"]
 	if chatID == "" {
 		err := fmt.Errorf("telegram: metadata must include telegram_chat_id")
@@ -62,7 +67,7 @@ func (t *Telegram) Publish(ctx context.Context, req model.PostRequest) (*model.P
 	}
 
 	payload, _ := json.Marshal(body)
-	endpoint := fmt.Sprintf("%s%s/sendPhoto", telegramAPIBase, t.token)
+	endpoint := fmt.Sprintf("%s%s/sendPhoto", telegramAPIBase, token)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {

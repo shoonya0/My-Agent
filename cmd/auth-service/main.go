@@ -8,12 +8,11 @@ import (
 	"myAgent/pkg/grpcserver"
 	"myAgent/pkg/httpserver"
 	"myAgent/pkg/logger"
-	"myAgent/pkg/model"
 	"myAgent/pkg/mysql"
 	apmotel "myAgent/pkg/otel"
+	"myAgent/pkg/redis"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.uber.org/zap"
 )
@@ -21,24 +20,31 @@ import (
 const serviceName = "auth-service"
 
 func main() {
+	// it loads the configuration from the environment variables
 	cfg := config.Load()
+
+	// it creates a new logger instance
 	log := logger.New(cfg.LogLevel)
+	// it syncs the logger
 	defer log.Sync()
 
+	// it initialises the tracer
 	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
 		log.Fatal("Failed to initialise tracer", zap.Error(err))
 	}
 	defer shutdown()
 
+	// it connects to the Redis database
+	rdb := redis.InitRedis(cfg, log)
+	defer rdb.Close()
+
+	// it connects to the MySQL database
 	db, err := mysql.NewDB(context.Background(), cfg.MySQLDSN)
 	if err != nil {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}
 	defer db.Close()
-
-	rdb := initRedis(cfg, log)
-	defer rdb.Close()
 
 	repo := auth.NewRepository(db)
 	svc := auth.NewService(repo, rdb, cfg.JWTSecret, log)
@@ -59,19 +65,4 @@ func main() {
 	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
 		log.Fatal("HTTP server error", zap.Error(err))
 	}
-}
-
-func initRedis(cfg *model.Config, log *zap.Logger) *redis.Client {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
-
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Fatal("Failed to connect to Redis", zap.Error(err))
-	}
-
-	log.Info("Connected to Redis successfully")
-	return rdb
 }

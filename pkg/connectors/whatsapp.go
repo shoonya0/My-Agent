@@ -48,6 +48,11 @@ func (wa *WhatsApp) Publish(ctx context.Context, req model.PostRequest) (*model.
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "whatsapp"))
 
+	token := wa.token
+	if override := req.Metadata["whatsapp_token"]; override != "" {
+		token = override
+	}
+
 	phoneNumberID := req.Metadata["whatsapp_phone_number_id"]
 	recipientPhone := req.Metadata["whatsapp_recipient"]
 	if phoneNumberID == "" || recipientPhone == "" {
@@ -75,7 +80,7 @@ func (wa *WhatsApp) Publish(ctx context.Context, req model.PostRequest) (*model.
 		return nil, fmt.Errorf("whatsapp: build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+wa.token)
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := wa.client.Do(httpReq)
 	if err != nil {

@@ -6,8 +6,10 @@ import (
 	"syscall"
 
 	"myAgent/internal/config"
+	"myAgent/internal/credentials"
 	"myAgent/internal/distribution"
 	"myAgent/pkg/connectors"
+	"myAgent/pkg/crypto"
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/logger"
 	"myAgent/pkg/mysql"
@@ -40,6 +42,13 @@ func main() {
 	}
 	defer db.Close()
 
+	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
+	if err != nil {
+		log.Fatal("Failed to create encryptor", zap.Error(err))
+	}
+	credRepo := credentials.NewRepository(db)
+	credSvc := credentials.NewService(credRepo, enc)
+
 	// ---- Kafka ----
 	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, consumerGroupID, topicImageApproved, log)
 	if err != nil {
@@ -66,7 +75,7 @@ func main() {
 
 	// ---- Distribution service ----
 	repo := distribution.NewRepository(db)
-	svc := distribution.NewService(consumer, producer, registry, repo, log)
+	svc := distribution.NewService(consumer, producer, registry, repo, credSvc, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

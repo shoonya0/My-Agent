@@ -48,14 +48,19 @@ func (ig *Instagram) Publish(ctx context.Context, req model.PostRequest) (*model
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "instagram"))
 
-	containerID, err := ig.createMediaContainer(ctx, req)
+	token := ig.token
+	if override := req.Metadata["instagram_token"]; override != "" {
+		token = override
+	}
+
+	containerID, err := ig.createMediaContainer(ctx, req, token)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("instagram: create media container: %w", err)
 	}
 
-	publishID, err := ig.publishContainer(ctx, containerID)
+	publishID, err := ig.publishContainer(ctx, containerID, token)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -69,11 +74,11 @@ func (ig *Instagram) Publish(ctx context.Context, req model.PostRequest) (*model
 	}, nil
 }
 
-func (ig *Instagram) createMediaContainer(ctx context.Context, req model.PostRequest) (string, error) {
+func (ig *Instagram) createMediaContainer(ctx context.Context, req model.PostRequest, token string) (string, error) {
 	payload, _ := json.Marshal(map[string]string{
 		"image_url":    req.MediaURL,
 		"caption":      req.Caption,
-		"access_token": ig.token,
+		"access_token": token,
 	})
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, instagramAPIBase+"/media", bytes.NewReader(payload))
@@ -102,10 +107,10 @@ func (ig *Instagram) createMediaContainer(ctx context.Context, req model.PostReq
 	return result.ID, nil
 }
 
-func (ig *Instagram) publishContainer(ctx context.Context, containerID string) (string, error) {
+func (ig *Instagram) publishContainer(ctx context.Context, containerID string, token string) (string, error) {
 	payload, _ := json.Marshal(map[string]string{
 		"creation_id":  containerID,
-		"access_token": ig.token,
+		"access_token": token,
 	})
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, instagramAPIBase+"/media_publish", bytes.NewReader(payload))

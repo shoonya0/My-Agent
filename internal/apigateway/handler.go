@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"myAgent/api/authpb"
+	"myAgent/internal/credentials"
 	"myAgent/internal/middleware"
 	"myAgent/pkg/model"
 
@@ -17,17 +18,19 @@ const maxImageSize = 20 << 20 // 20 MB
 
 // GatewayHandler holds dependencies for all api-gateway HTTP handlers.
 type GatewayHandler struct {
-	cfg        *model.Config
-	rdb        *redis.Client
-	authClient authpb.AuthServiceClient
+	cfg         *model.Config
+	rdb         *redis.Client
+	authClient  authpb.AuthServiceClient
+	credHandler *credentials.Handler
 }
 
 // NewGatewayHandler constructs a GatewayHandler with the required dependencies.
-func NewGatewayHandler(cfg *model.Config, rdb *redis.Client, authClient authpb.AuthServiceClient) *GatewayHandler {
+func NewGatewayHandler(cfg *model.Config, rdb *redis.Client, authClient authpb.AuthServiceClient, credHandler *credentials.Handler) *GatewayHandler {
 	return &GatewayHandler{
-		cfg:        cfg,
-		rdb:        rdb,
-		authClient: authClient,
+		cfg:         cfg,
+		rdb:         rdb,
+		authClient:  authClient,
+		credHandler: credHandler,
 	}
 }
 
@@ -51,6 +54,8 @@ func (h *GatewayHandler) RegisterRoutes(r *gin.Engine) {
 		protected.POST("/jobs/:job_id/approve", h.ApproveJob)
 		protected.POST("/jobs/:job_id/reject", h.RejectJob)
 	}
+
+	h.credHandler.RegisterRoutes(protected)
 }
 
 // Health is a liveness probe that returns 200 OK.
@@ -66,33 +71,40 @@ type registerGatewayRequest struct {
 
 // Register handles new user registration by forwarding to auth-service via gRPC.
 func (h *GatewayHandler) Register(c *gin.Context) {
+	// it binds the request body to the registerGatewayRequest struct
 	var req registerGatewayRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// it makes a gRPC call to the auth-service to register the user
 	pbResp, err := h.authClient.Register(c.Request.Context(), &authpb.RegisterUserRequest{
 		Email:       req.Email,
 		Password:    req.Password,
 		DisplayName: req.DisplayName,
 	})
 	if err != nil {
+		// it checks if the error is an AlreadyExists error
 		st, ok := status.FromError(err)
+		// if the error is an AlreadyExists error, it returns a 409 Conflict response
 		if ok && st.Code() == codes.AlreadyExists {
 			c.JSON(http.StatusConflict, gin.H{"error": st.Message()})
 			return
 		}
+		// if the error is not an AlreadyExists error, it returns a 500 Internal Server Error response
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "registration failed"})
 		return
 	}
 
+	// it converts the gRPC response to a model.TokenResponse and returns it to the client
 	c.JSON(http.StatusCreated, protoToTokenResponse(pbResp))
 }
 
 // Me returns the authenticated user's profile from the JWT claims.
 func (h *GatewayHandler) Me(c *gin.Context) {
 	user := middleware.CurrentUser(c)
+	// it returns the authenticated user's profile from the JWT claims
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": user.UserID,
 		"roles":   user.Roles,

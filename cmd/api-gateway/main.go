@@ -6,13 +6,16 @@ import (
 	"myAgent/api/authpb"
 	"myAgent/internal/apigateway"
 	"myAgent/internal/config"
+	"myAgent/internal/credentials"
+	"myAgent/pkg/crypto"
 	"myAgent/pkg/httpserver"
 	"myAgent/pkg/logger"
 	"myAgent/pkg/model"
+	"myAgent/pkg/mysql"
 	apmotel "myAgent/pkg/otel"
+	"myAgent/pkg/redis"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
@@ -21,22 +24,6 @@ import (
 )
 
 const serviceName = "api-gateway"
-
-func InitRedis(cfg *model.Config, log *zap.Logger) *redis.Client {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
-
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Fatal("Failed to connect to Redis", zap.Error(err))
-	}
-
-	log.Info("Connected to Redis successfully")
-
-	return rdb
-}
 
 // client connection is used to make gRPC calls to the auth-service
 func dialAuthService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
@@ -66,22 +53,43 @@ func main() {
 	}
 	defer shutdown()
 
-	rdb := InitRedis(cfg, log)
+	// it connects to the Redis database
+	rdb := redis.InitRedis(cfg, log)
 	defer rdb.Close()
 
-	// dialAuthService is used to dial the auth-service gRPC server
-	// it returns a grpc.ClientConn that can be used to make gRPC calls to the auth-service
+	// it connects to the MySQL database
+	db, err := mysql.NewDB(context.Background(), cfg.MySQLDSN)
+	if err != nil {
+		log.Fatal("Failed to connect to MySQL", zap.Error(err))
+	}
+	defer db.Close()
+
+	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
+	if err != nil {
+		log.Fatal("Failed to create encryptor", zap.Error(err))
+	}
+
+	// it creates a new credentials repository using the MySQL database connection
+	credRepo := credentials.NewRepository(db)
+
+	// it creates a new credentials service using the credentials repository and the encryptor
+	credSvc := credentials.NewService(credRepo, enc)
+
+	// it creates a new credentials handler using the credentials service
+	credHandler := credentials.NewHandler(credSvc)
+
+	// it creates a new auth connection using the auth service address
 	authConn := dialAuthService(cfg, log)
 	defer authConn.Close()
+
+	// it creates a new auth client using the auth connection that was created in the dialAuthService function
 	authClient := authpb.NewAuthServiceClient(authConn)
 
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
-
-	// It instruments the Gin HTTP server with OpenTelemetry it's used to track the HTTP requests and responses
 	r.Use(otelgin.Middleware(serviceName))
 
-	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient)
+	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient, credHandler)
 	handler.RegisterRoutes(r)
 
 	log.Info("Starting server", zap.String("port", cfg.Port))
