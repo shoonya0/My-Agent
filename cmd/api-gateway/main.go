@@ -87,8 +87,11 @@ func main() {
 
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
+
+	// it uses the otelgin middleware to trace the requests
 	r.Use(otelgin.Middleware(serviceName))
 
+	// it creates a new gateway handler using the configuration, Redis database connection, auth client, and credentials handler
 	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient, credHandler)
 	handler.RegisterRoutes(r)
 

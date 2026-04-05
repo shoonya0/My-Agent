@@ -14,11 +14,26 @@ import (
 // Environment variables are mapped via mapstructure tags. Required fields
 // cause a panic at startup if missing.
 type Config struct {
-	ServiceName string `mapstructure:"SERVICE_NAME" required:"true"`
-	LogLevel    string `mapstructure:"LOG_LEVEL" default:"info"`
-	Port        string `mapstructure:"PORT" default:"8080"`
-	GRPCPort    string `mapstructure:"GRPC_PORT" default:"9090"`
-	MySQLDSN    string `mapstructure:"MYSQL_DSN" required:"true"`
+	LogLevel string `mapstructure:"LOG_LEVEL" default:"info"`
+	Port     string `mapstructure:"PORT" default:"8080"`
+	GRPCPort string `mapstructure:"GRPC_PORT" default:"9090"`
+	MySQLDSN string `mapstructure:"MYSQL_DSN" required:"true"`
+
+	// Service Names and Ports
+	APIServiceName           string `mapstructure:"API_SERVICE_NAME" default:"api-gateway"`
+	APIGatewayPort           string `mapstructure:"API_GATEWAY_PORT" default:"8081"`
+	AuthServiceName          string `mapstructure:"AUTH_SERVICE_NAME" default:"auth-service"`
+	AuthServicePort          string `mapstructure:"AUTH_SERVICE_PORT" default:"8082"`
+	OrchestratorServiceName  string `mapstructure:"ORCHESTRATOR_SERVICE_NAME" default:"orchestrator"`
+	OrchestratorPort         string `mapstructure:"ORCHESTRATOR_PORT" default:"8083"`
+	PromptAgentServiceName   string `mapstructure:"PROMPT_AGENT_SERVICE_NAME" default:"prompt-agent"`
+	PromptAgentPort          string `mapstructure:"PROMPT_AGENT_PORT" default:"8084"`
+	ImageGenAgentServiceName string `mapstructure:"IMAGE_GEN_AGENT_SERVICE_NAME" default:"image-gen-agent"`
+	ImageGenAgentPort        string `mapstructure:"IMAGE_GEN_AGENT_PORT" default:"8085"`
+	ApprovalServiceName      string `mapstructure:"APPROVAL_SERVICE_NAME" default:"approval-service"`
+	ApprovalServicePort      string `mapstructure:"APPROVAL_SERVICE_PORT" default:"8086"`
+	DistributionServiceName  string `mapstructure:"DISTRIBUTION_SERVICE_NAME" default:"distribution-service"`
+	DistributionPort         string `mapstructure:"DISTRIBUTION_PORT" default:"8087"`
 
 	RedisAddr     string `mapstructure:"REDIS_ADDR" required:"true"`
 	RedisPassword string `mapstructure:"REDIS_PASSWORD" default:""`

@@ -43,9 +43,14 @@ func Load() *model.Config {
 // config value is missing — fail-fast rather than silent runtime errors.
 func validateRequired(cfg *model.Config) {
 	required := map[string]string{
-		"SERVICE_NAME": cfg.ServiceName,
-		"REDIS_ADDR":   cfg.RedisAddr,
-		"JWT_SECRET":   cfg.JWTSecret,
+		"MYSQL_DSN":        cfg.MySQLDSN,
+		"REDIS_ADDR":       cfg.RedisAddr,
+		"JWT_SECRET":       cfg.JWTSecret,
+		"KAFKA_BROKERS":    cfg.KafkaBrokers,
+		"OPENAI_API_KEY":   cfg.OpenAIKey,
+		"COMFYUI_BASE_URL": cfg.ComfyUIBaseURL,
+		"AWS_BUCKET":       cfg.AWSBucket,
+		"ENCRYPTION_KEY":   cfg.EncryptionKey,
 	}
 
 	var missing []string

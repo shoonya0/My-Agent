@@ -46,10 +46,16 @@ func main() {
 	}
 	defer db.Close()
 
+	// it creates a new auth repository using the MySQL database connection
 	repo := auth.NewRepository(db)
+
+	// it creates a new auth service using the auth repository and the Redis database connection
+
 	svc := auth.NewService(repo, rdb, cfg.JWTSecret, log)
+	// it creates a new auth handler using the auth service
 	h := auth.NewHandler(svc, log)
 
+	// it starts the gRPC server using the auth handler
 	grpcSrv, err := grpcserver.Start(cfg.GRPCPort, h.GRPCRegistrar(), log)
 	if err != nil {
 		log.Fatal("Failed to start gRPC server", zap.Error(err))

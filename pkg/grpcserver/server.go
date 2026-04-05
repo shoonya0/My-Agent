@@ -19,14 +19,20 @@ type Registrar func(srv *grpc.Server)
 // shutting down (e.g. defer srv.GracefulStop()); this package does not handle
 // signals.
 func Start(port string, register Registrar, log *zap.Logger, opts ...grpc.ServerOption) (*grpc.Server, error) {
+	// it creates a new TCP listener on the given port
 	addr := ":" + port
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("grpcserver: listen on port %s: %w", port, err)
 	}
 
+	// it creates a new gRPC server with the given options
 	srv := grpc.NewServer(opts...)
+
+	// it registers the services on the gRPC server
 	register(srv)
+
+	// it registers the reflection service on the gRPC server
 	reflection.Register(srv)
 
 	go func() {
