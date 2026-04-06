@@ -15,7 +15,6 @@ import (
 // cause a panic at startup if missing.
 type Config struct {
 	LogLevel string `mapstructure:"LOG_LEVEL" default:"info"`
-	Port     string `mapstructure:"PORT" default:"8080"`
 	GRPCPort string `mapstructure:"GRPC_PORT" default:"9090"`
 	MySQLDSN string `mapstructure:"MYSQL_DSN" required:"true"`
 

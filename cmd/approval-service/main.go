@@ -101,13 +101,13 @@ func main() {
 	}()
 
 	log.Info("Starting approval-service",
-		zap.String("port", cfg.Port),
+		zap.String("port", cfg.ApprovalServicePort),
 		zap.String("topic", topicImageGenerated),
 		zap.String("consumer_group", consumerGroupID),
 	)
 
 	// ---- HTTP server (blocks until signal) ----
-	if err := httpserver.Start(":"+cfg.Port, h.Routes()); err != nil {
+	if err := httpserver.Start(":"+cfg.ApprovalServicePort, h.Routes()); err != nil {
 		log.Fatal("HTTP server error", zap.Error(err))
 	}
 

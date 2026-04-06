@@ -6,10 +6,12 @@ import (
 	"myAgent/api/authpb"
 	"myAgent/internal/credentials"
 	"myAgent/internal/middleware"
+	"myAgent/pkg/messages"
 	"myAgent/pkg/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -35,13 +37,15 @@ func NewGatewayHandler(cfg *model.Config, rdb *redis.Client, authClient authpb.A
 }
 
 // RegisterRoutes wires every route group and endpoint onto the given engine.
-func (h *GatewayHandler) RegisterRoutes(r *gin.Engine) {
+func (h *GatewayHandler) RegisterRoutes(r *gin.Engine, log *zap.Logger) {
 	r.GET("/health", h.Health)
 
 	public := r.Group("/api")
 	public.Use(middleware.RateLimiter(h.rdb, 30))
 	{
-		public.POST("/register", h.Register)
+		public.POST("/register", func(c *gin.Context) {
+			h.Register(c, log)
+		})
 	}
 
 	protected := r.Group("/api/v1")
@@ -70,11 +74,13 @@ type registerGatewayRequest struct {
 }
 
 // Register handles new user registration by forwarding to auth-service via gRPC.
-func (h *GatewayHandler) Register(c *gin.Context) {
+func (h *GatewayHandler) Register(c *gin.Context, log *zap.Logger) {
 	// it binds the request body to the registerGatewayRequest struct
 	var req registerGatewayRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// ParseBindingErrorWithFields automatically extracts which field(s) are empty/invalid
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
@@ -89,16 +95,23 @@ func (h *GatewayHandler) Register(c *gin.Context) {
 		st, ok := status.FromError(err)
 		// if the error is an AlreadyExists error, it returns a 409 Conflict response
 		if ok && st.Code() == codes.AlreadyExists {
-			c.JSON(http.StatusConflict, gin.H{"error": st.Message()})
+			c.JSON(http.StatusConflict, messages.ErrorResponse(
+				messages.ErrCodeAlreadyExists,
+				messages.MsgEmailAlreadyRegistered,
+			))
 			return
 		}
-		// if the error is not an AlreadyExists error, it returns a 500 Internal Server Error response
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "registration failed"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			messages.MsgRegistrationFailed,
+		))
 		return
 	}
 
-	// it converts the gRPC response to a model.TokenResponse and returns it to the client
-	c.JSON(http.StatusCreated, protoToTokenResponse(pbResp))
+	c.JSON(http.StatusCreated, messages.SuccessResponse(
+		messages.MsgRegistrationSuccess,
+		protoToTokenResponse(pbResp),
+	))
 }
 
 // Me returns the authenticated user's profile from the JWT claims.
@@ -116,34 +129,45 @@ func (h *GatewayHandler) Me(c *gin.Context) {
 func (h *GatewayHandler) SubmitJob(c *gin.Context) {
 	file, header, err := c.Request.FormFile("image")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "image file is required"})
+		c.JSON(http.StatusBadRequest, messages.ErrorResponse(
+			messages.ErrCodeMissingField,
+			messages.MsgImageRequired,
+		))
 		return
 	}
 	defer file.Close()
 
 	if header.Size > maxImageSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "image must be under 20MB"})
+		c.JSON(http.StatusBadRequest, messages.ErrorResponse(
+			messages.ErrCodeFileTooLarge,
+			messages.MsgImageTooLarge,
+		))
 		return
 	}
 
 	ct := header.Header.Get("Content-Type")
 	if ct != "image/png" && ct != "image/jpeg" && ct != "image/webp" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "image must be png, jpeg, or webp"})
+		c.JSON(http.StatusBadRequest, messages.ErrorResponse(
+			messages.ErrCodeInvalidFileFormat,
+			messages.MsgInvalidImageFormat,
+		))
 		return
 	}
 
 	var req model.SubmitJobRequest
 	if err := c.ShouldBind(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
 	// TODO: upload image to S3, create Job record, publish Kafka event
 	_ = file // will be read for S3 upload
-	c.JSON(http.StatusAccepted, model.SubmitJobResponse{
+	resp := model.SubmitJobResponse{
 		JobID:  "", // will be generated
 		Status: model.JobStatusPending,
-	})
+	}
+	c.JSON(http.StatusAccepted, messages.SuccessResponse(messages.MsgJobSubmitted, resp))
 }
 
 // GetJob returns the full detail for a single job.
@@ -163,16 +187,18 @@ func (h *GatewayHandler) ApproveJob(c *gin.Context) {
 
 	var req model.ApproveJobRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
 	// TODO: publish image.approved Kafka event
-	c.JSON(http.StatusAccepted, model.JobActionResponse{
+	resp := model.JobActionResponse{
 		JobID:   jobID,
 		Status:  model.JobStatusDistributing,
-		Message: "job approved",
-	})
+		Message: messages.MsgJobApproved,
+	}
+	c.JSON(http.StatusAccepted, messages.SuccessResponse(messages.MsgJobApproved, resp))
 }
 
 // RejectJob marks a generated image as rejected.
@@ -181,16 +207,18 @@ func (h *GatewayHandler) RejectJob(c *gin.Context) {
 
 	var req model.RejectJobRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
 	// TODO: update job status in DB
-	c.JSON(http.StatusOK, model.JobActionResponse{
+	resp := model.JobActionResponse{
 		JobID:   jobID,
 		Status:  model.JobStatusRejected,
-		Message: "job rejected",
-	})
+		Message: messages.MsgJobRejected,
+	}
+	c.JSON(http.StatusOK, messages.SuccessResponse(messages.MsgJobRejected, resp))
 }
 
 // ---------------------------------------------------------------------------

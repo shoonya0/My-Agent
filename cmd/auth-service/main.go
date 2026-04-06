@@ -28,7 +28,13 @@ func main() {
 	// it syncs the logger
 	defer log.Sync()
 
-	// it initialises the tracer
+	log.Info("Starting auth-service",
+		zap.String("service", serviceName),
+		zap.String("http_port", cfg.AuthServicePort),
+		zap.String("grpc_port", cfg.GRPCPort),
+		zap.String("log_level", cfg.LogLevel),
+	)
+
 	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
 		log.Fatal("Failed to initialise tracer", zap.Error(err))
@@ -67,8 +73,8 @@ func main() {
 	r.Use(otelgin.Middleware(serviceName))
 	h.RegisterRoutes(r)
 
-	log.Info("Starting auth HTTP server", zap.String("port", cfg.Port))
-	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
+	log.Info("HTTP server ready", zap.String("port", cfg.AuthServicePort))
+	if err := httpserver.Start(":"+cfg.AuthServicePort, r); err != nil {
 		log.Fatal("HTTP server error", zap.Error(err))
 	}
 }

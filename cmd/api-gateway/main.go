@@ -47,13 +47,18 @@ func main() {
 	log := logger.New(cfg.LogLevel)
 	defer log.Sync()
 
+	log.Info("Starting api-gateway",
+		zap.String("service", serviceName),
+		zap.String("port", cfg.APIGatewayPort),
+		zap.String("log_level", cfg.LogLevel),
+	)
+
 	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
 		log.Fatal("Failed to initialise tracer", zap.Error(err))
 	}
 	defer shutdown()
 
-	// it connects to the Redis database
 	rdb := redis.InitRedis(cfg, log)
 	defer rdb.Close()
 
@@ -93,10 +98,10 @@ func main() {
 
 	// it creates a new gateway handler using the configuration, Redis database connection, auth client, and credentials handler
 	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient, credHandler)
-	handler.RegisterRoutes(r)
+	handler.RegisterRoutes(r, log)
 
-	log.Info("Starting server", zap.String("port", cfg.Port))
-	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
-		log.Fatal("Server error", zap.Error(err))
+	log.Info("HTTP server ready", zap.String("port", cfg.APIGatewayPort))
+	if err := httpserver.Start(":"+cfg.APIGatewayPort, r); err != nil {
+		log.Fatal("HTTP server error", zap.Error(err))
 	}
 }

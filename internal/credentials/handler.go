@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"myAgent/internal/middleware"
+	"myAgent/pkg/messages"
 	"myAgent/pkg/model"
 
 	"github.com/gin-gonic/gin"
@@ -39,17 +40,21 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	var req model.ConnectPlatformRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
 	resp, err := h.svc.Connect(c.Request.Context(), user.UserID, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to connect platform"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			"Failed to connect platform",
+		))
 		return
 	}
 
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, messages.SuccessResponse(messages.MsgPlatformConnected, resp))
 }
 
 // List returns all connected platforms for the authenticated user.
@@ -58,11 +63,14 @@ func (h *Handler) List(c *gin.Context) {
 
 	resp, err := h.svc.List(c.Request.Context(), user.UserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list credentials"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			"Failed to list platform credentials",
+		))
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, messages.SuccessResponse("Platform credentials retrieved", resp))
 }
 
 // Get returns the credential details for a specific platform.
@@ -73,14 +81,20 @@ func (h *Handler) Get(c *gin.Context) {
 	resp, err := h.svc.Get(c.Request.Context(), user.UserID, platform)
 	if err != nil {
 		if errors.Is(err, ErrCredentialNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "platform not connected"})
+			c.JSON(http.StatusNotFound, messages.ErrorResponse(
+				messages.ErrCodeNotFound,
+				messages.MsgPlatformNotConnected,
+			))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get credential"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			"Failed to get platform credential",
+		))
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, messages.SuccessResponse("Platform credential retrieved", resp))
 }
 
 // Update refreshes the token for an already-connected platform.
@@ -90,21 +104,28 @@ func (h *Handler) Update(c *gin.Context) {
 
 	var req model.UpdatePlatformRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
 	resp, err := h.svc.Update(c.Request.Context(), user.UserID, platform, req)
 	if err != nil {
 		if errors.Is(err, ErrCredentialNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "platform not connected"})
+			c.JSON(http.StatusNotFound, messages.ErrorResponse(
+				messages.ErrCodeNotFound,
+				messages.MsgPlatformNotConnected,
+			))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update credential"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			"Failed to update platform credential",
+		))
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, messages.SuccessResponse("Platform credential updated", resp))
 }
 
 // Disconnect removes a connected platform.
@@ -114,12 +135,18 @@ func (h *Handler) Disconnect(c *gin.Context) {
 
 	if err := h.svc.Disconnect(c.Request.Context(), user.UserID, platform); err != nil {
 		if errors.Is(err, ErrCredentialNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "platform not connected"})
+			c.JSON(http.StatusNotFound, messages.ErrorResponse(
+				messages.ErrCodeNotFound,
+				messages.MsgPlatformNotConnected,
+			))
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to disconnect platform"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			"Failed to disconnect platform",
+		))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "platform disconnected"})
+	c.JSON(http.StatusOK, messages.SuccessResponse(messages.MsgPlatformDisconnected, nil))
 }

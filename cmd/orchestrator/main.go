@@ -53,8 +53,8 @@ func main() {
 	r.Use(otelgin.Middleware(serviceName))
 	h.RegisterRoutes(r)
 
-	log.Info("Starting orchestrator HTTP server", zap.String("port", cfg.Port))
-	if err := httpserver.Start(":"+cfg.Port, r); err != nil {
+	log.Info("Starting orchestrator HTTP server", zap.String("port", cfg.OrchestratorPort))
+	if err := httpserver.Start(":"+cfg.OrchestratorPort, r); err != nil {
 		log.Fatal("HTTP server error", zap.Error(err))
 	}
 }

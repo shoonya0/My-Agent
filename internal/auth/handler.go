@@ -8,6 +8,7 @@ import (
 
 	"myAgent/api/authpb"
 	"myAgent/pkg/grpcserver"
+	"myAgent/pkg/messages"
 	"myAgent/pkg/model"
 
 	"github.com/gin-gonic/gin"
@@ -129,7 +130,8 @@ func (h *Handler) health(c *gin.Context) {
 func (h *Handler) register(c *gin.Context) {
 	var req registerHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
@@ -143,13 +145,14 @@ func (h *Handler) register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, messages.SuccessResponse(messages.MsgRegistrationSuccess, resp))
 }
 
 func (h *Handler) login(c *gin.Context) {
 	var req loginHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
@@ -162,34 +165,49 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, messages.SuccessResponse(messages.MsgLoginSuccess, resp))
 }
 
 func (h *Handler) logout(c *gin.Context) {
 	token := extractBearerToken(c)
 	if token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bearer token required"})
+		c.JSON(http.StatusBadRequest, messages.ErrorResponse(
+			messages.ErrCodeTokenMissing,
+			messages.MsgTokenMissing,
+		))
 		return
 	}
 
 	if err := h.svc.RevokeToken(c.Request.Context(), token); err != nil {
 		h.log.Error("Failed to revoke token", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke token"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			messages.MsgLogoutFailed,
+		))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
+	c.JSON(http.StatusOK, messages.SuccessResponse(messages.MsgLogoutSuccess, nil))
 }
 
 func (h *Handler) handleServiceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidCredentials):
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		c.JSON(http.StatusUnauthorized, messages.ErrorResponse(
+			messages.ErrCodeInvalidCredentials,
+			messages.MsgInvalidCredentials,
+		))
 	case errors.Is(err, ErrEmailTaken):
-		c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+		c.JSON(http.StatusConflict, messages.ErrorResponse(
+			messages.ErrCodeAlreadyExists,
+			messages.MsgEmailAlreadyRegistered,
+		))
 	default:
 		h.log.Error("Internal error", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			messages.MsgInternalServerError,
+		))
 	}
 }
 
