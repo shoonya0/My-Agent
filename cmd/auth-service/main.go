@@ -14,7 +14,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 const serviceName = "auth-service"
@@ -57,12 +59,14 @@ func main() {
 
 	// it creates a new auth service using the auth repository and the Redis database connection
 
-	svc := auth.NewService(repo, rdb, cfg.JWTSecret, log)
+	svc := auth.NewService(repo, rdb, cfg, log)
 	// it creates a new auth handler using the auth service
 	h := auth.NewHandler(svc, log)
 
 	// it starts the gRPC server using the auth handler
-	grpcSrv, err := grpcserver.Start(cfg.GRPCPort, h.GRPCRegistrar(), log)
+	grpcSrv, err := grpcserver.Start(cfg.GRPCPort, h.GRPCRegistrar(), log,
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+	)
 	if err != nil {
 		log.Fatal("Failed to start gRPC server", zap.Error(err))
 	}

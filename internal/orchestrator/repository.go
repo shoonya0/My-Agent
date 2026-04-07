@@ -21,6 +21,7 @@ type Repository interface {
 	UpdateJobStatus(ctx context.Context, id, status string) error
 	UpdateJob(ctx context.Context, job *model.Job) error
 	InsertStatusHistory(ctx context.Context, h *model.JobStatusHistory) error
+	ListPostResultsByJobID(ctx context.Context, jobID string) ([]model.PostResult, error)
 }
 
 type mysqlRepository struct {
@@ -119,6 +120,35 @@ func (r *mysqlRepository) UpdateJob(ctx context.Context, job *model.Job) error {
 		return ErrJobNotFound
 	}
 	return nil
+}
+
+func (r *mysqlRepository) ListPostResultsByJobID(ctx context.Context, jobID string) ([]model.PostResult, error) {
+	const q = `
+		SELECT id, job_id, user_id, platform, status, platform_post_id,
+		       platform_url, error_detail, attempt_count, created_at
+		FROM post_results
+		WHERE job_id = ?
+		ORDER BY created_at`
+
+	rows, err := r.db.QueryContext(ctx, q, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("orchestrator: list post results: %w", err)
+	}
+	defer rows.Close()
+
+	var results []model.PostResult
+	for rows.Next() {
+		var pr model.PostResult
+		if err := rows.Scan(
+			&pr.ID, &pr.JobID, &pr.UserID, &pr.Platform, &pr.Status,
+			&pr.PlatformPostID, &pr.PlatformURL, &pr.ErrorDetail,
+			&pr.AttemptCount, &pr.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("orchestrator: scan post result: %w", err)
+		}
+		results = append(results, pr)
+	}
+	return results, rows.Err()
 }
 
 func (r *mysqlRepository) InsertStatusHistory(ctx context.Context, h *model.JobStatusHistory) error {

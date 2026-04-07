@@ -68,6 +68,65 @@ func (h *Handler) Register(ctx context.Context, req *authpb.RegisterUserRequest)
 	return tokenResponseToProto(resp), nil
 }
 
+// Login implements authpb.AuthServiceServer.
+func (h *Handler) Login(ctx context.Context, req *authpb.LoginRequest) (*authpb.TokenResponse, error) {
+	resp, err := h.svc.Login(ctx, LoginRequest{
+		Email:    req.GetEmail(),
+		Password: req.GetPassword(),
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid credentials")
+		}
+		h.log.Error("Login gRPC failed", zap.Error(err))
+		return nil, status.Errorf(codes.Internal, "login failed")
+	}
+	return tokenResponseToProto(resp), nil
+}
+
+// Logout implements authpb.AuthServiceServer.
+func (h *Handler) Logout(ctx context.Context, req *authpb.LogoutRequest) (*authpb.LogoutResponse, error) {
+	if err := h.svc.RevokeToken(ctx, req.GetToken()); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidLogoutToken),
+			errors.Is(err, ErrLogoutTokenMissingJTI),
+			errors.Is(err, ErrLogoutTokenMissingExpiry):
+			return nil, status.Errorf(codes.InvalidArgument, "invalid token")
+		}
+		h.log.Error("Logout gRPC failed", zap.Error(err))
+		return nil, status.Errorf(codes.Internal, "logout failed")
+	}
+	return &authpb.LogoutResponse{Success: true}, nil
+}
+
+// HandleOAuthCallback implements authpb.AuthServiceServer.
+func (h *Handler) HandleOAuthCallback(ctx context.Context, req *authpb.OAuthCallbackRequest) (*authpb.TokenResponse, error) {
+	resp, err := h.svc.HandleOAuthCallback(ctx, OAuthCallbackParams{
+		Provider: req.GetProvider(),
+		Code:     req.GetCode(),
+		State:    req.GetState(),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidOAuthState):
+			return nil, status.Errorf(codes.InvalidArgument, "invalid or expired OAuth state")
+		case errors.Is(err, ErrOAuthProviderUnknown):
+			return nil, status.Errorf(codes.InvalidArgument, "unknown OAuth provider")
+		case errors.Is(err, ErrOAuthNotConfigured):
+			return nil, status.Errorf(codes.FailedPrecondition, "OAuth provider not configured")
+		case errors.Is(err, ErrOAuthExchangeFailed):
+			return nil, status.Errorf(codes.Unauthenticated, "OAuth code exchange failed")
+		case errors.Is(err, ErrOAuthProfileFailed):
+			return nil, status.Errorf(codes.Unauthenticated, "OAuth profile fetch failed")
+		case errors.Is(err, ErrOAuthEmailConflict):
+			return nil, status.Errorf(codes.AlreadyExists, "email already registered with another account")
+		}
+		h.log.Error("OAuth callback gRPC failed", zap.Error(err))
+		return nil, status.Errorf(codes.Internal, "OAuth failed")
+	}
+	return tokenResponseToProto(resp), nil
+}
+
 // ---------------------------------------------------------------------------
 // Proto ↔ model converters (gRPC boundary only)
 // ---------------------------------------------------------------------------

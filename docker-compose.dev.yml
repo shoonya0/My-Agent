@@ -1,0 +1,65 @@
+# Development overrides: bind-mount the repo and run services with `go run`.
+# Requires the same config.env as docker-compose.yml.
+#
+# Usage (example — api-gateway only):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build api-gateway
+#
+# The merged file replaces the production Dockerfile with deploy/docker/dev-golang.Dockerfile
+# and overrides `command` per service. Infrastructure services are unchanged.
+
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: deploy/docker/dev-golang.Dockerfile
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/api-gateway"]
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: deploy/docker/dev-golang.Dockerfile
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/auth-service"]
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: deploy/docker/dev-golang.Dockerfile
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/orchestrator"]
+
+  prompt-agent:
+    build:
+      context: .
+      dockerfile: deploy/docker/dev-golang.Dockerfile
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/prompt-agent"]
+
+  image-gen-agent:
+    build:
+      context: .
+      dockerfile: deploy/docker/dev-golang.Dockerfile
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/image-gen-agent"]
+
+  approval-service:
+    build:
+      context: .
+      dockerfile: deploy/docker/dev-golang.Dockerfile
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/approval-service"]
+
+  distribution-service:
+    build:
+      context: .
+      dockerfile: deploy/docker/dev-golang.Dockerfile
+    volumes:
+      - .:/app
+    command: ["go", "run", "./cmd/distribution"]

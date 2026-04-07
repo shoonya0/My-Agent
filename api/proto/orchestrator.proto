@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package orchestrator.v1;
+
+option go_package = "myAgent/api/orchestratorpb";
+
+// OrchestratorService is the internal gRPC API for job submission and lifecycle
+// actions. The api-gateway forwards authenticated HTTP traffic here.
+service OrchestratorService {
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+  rpc GetJob(GetJobRequest) returns (GetJobResponse);
+  rpc ApproveJob(ApproveJobRequest) returns (JobActionResponse);
+  rpc RejectJob(RejectJobRequest) returns (JobActionResponse);
+}
+
+message SubmitJobRequest {
+  string user_id = 1;
+  string prompt = 2;
+  string image_url = 3;
+  repeated string platforms = 4;
+  string caption = 5;
+}
+
+message SubmitJobResponse {
+  string job_id = 1;
+  string status = 2;
+  string ws_url = 3;
+  int64 created_at_unix = 4;
+}
+
+message GetJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+}
+
+message PostResultMsg {
+  string id = 1;
+  string job_id = 2;
+  string user_id = 3;
+  string platform = 4;
+  string status = 5;
+  string platform_post_id = 6;
+  string platform_url = 7;
+  string error_detail = 8;
+  int32 attempt_count = 9;
+  int64 created_at_unix = 10;
+}
+
+message GetJobResponse {
+  string id = 1;
+  string status = 2;
+  string original_prompt = 3;
+  string refined_prompt = 4;
+  string original_image_url = 5;
+  string generated_image_url = 6;
+  repeated PostResultMsg post_results = 7;
+  int64 created_at_unix = 8;
+}
+
+message ApproveJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+  string caption = 3;
+  repeated string platforms = 4;
+}
+
+message RejectJobRequest {
+  string job_id = 1;
+  string user_id = 2;
+  string reason = 3;
+}
+
+message JobActionResponse {
+  string job_id = 1;
+  string status = 2;
+  string message = 3;
+}

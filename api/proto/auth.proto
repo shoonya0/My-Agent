@@ -5,10 +5,14 @@ package auth.v1;
 option go_package = "myAgent/api/authpb";
 
 // AuthService is the internal gRPC service used by api-gateway for
-// authentication operations: token validation and user registration.
+// authentication operations: token validation, registration, session management,
+// and OAuth callback processing.
 service AuthService {
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
   rpc Register(RegisterUserRequest) returns (TokenResponse);
+  rpc Login(LoginRequest) returns (TokenResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc HandleOAuthCallback(OAuthCallbackRequest) returns (TokenResponse);
 }
 
 message ValidateTokenRequest {
@@ -32,4 +36,23 @@ message TokenResponse {
   string refresh_token = 2;
   int32 expires_in = 3;
   string token_type = 4;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LogoutRequest {
+  string token = 1;
+}
+
+message LogoutResponse {
+  bool success = 1;
+}
+
+message OAuthCallbackRequest {
+  string provider = 1;
+  string code = 2;
+  string state = 3;
 }

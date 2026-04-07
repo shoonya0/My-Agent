@@ -1,89 +1,172 @@
 package orchestrator
 
 import (
+	"context"
 	"errors"
-	"net/http"
 
-	"github.com/gin-gonic/gin"
+	"myAgent/api/orchestratorpb"
+	"myAgent/pkg/grpcserver"
+	"myAgent/pkg/model"
+
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// Handler holds dependencies for orchestrator HTTP endpoints.
+// Handler implements orchestrator.v1.OrchestratorService.
 type Handler struct {
+	orchestratorpb.UnimplementedOrchestratorServiceServer
 	svc Service
 	log *zap.Logger
 }
 
-// NewHandler constructs an orchestrator Handler.
+// NewHandler constructs an orchestrator gRPC Handler.
 func NewHandler(svc Service, log *zap.Logger) *Handler {
 	return &Handler{svc: svc, log: log}
 }
 
-// RegisterRoutes wires orchestrator endpoints onto the given Gin engine.
-// Routes are intended to be called by the api-gateway, which forwards
-// the authenticated user's ID via the X-User-ID header.
-func (h *Handler) RegisterRoutes(r *gin.Engine) {
-	r.GET("/health", h.health)
-
-	jobs := r.Group("/api/v1/jobs")
-	{
-		jobs.POST("", h.submitJob)
-		jobs.GET("/:job_id", h.getJob)
+// GRPCRegistrar returns a registrar for the orchestrator gRPC service.
+func (h *Handler) GRPCRegistrar() grpcserver.Registrar {
+	return func(srv *grpc.Server) {
+		orchestratorpb.RegisterOrchestratorServiceServer(srv, h)
 	}
 }
 
-func (h *Handler) health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
-type submitJobHTTPRequest struct {
-	Prompt    string   `json:"prompt" binding:"required,max=1000"`
-	ImageURL  string   `json:"image_url" binding:"required"`
-	Platforms []string `json:"platforms" binding:"required,min=1"`
-	Caption   string   `json:"caption" binding:"max=2200"`
-}
-
-func (h *Handler) submitJob(c *gin.Context) {
-	userID := c.GetHeader("X-User-ID")
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing X-User-ID header"})
-		return
+// SubmitJob implements orchestratorpb.OrchestratorServiceServer.
+func (h *Handler) SubmitJob(ctx context.Context, req *orchestratorpb.SubmitJobRequest) (*orchestratorpb.SubmitJobResponse, error) {
+	if req.GetUserId() == "" || req.GetPrompt() == "" || req.GetImageUrl() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id, prompt, and image_url are required")
+	}
+	if len(req.GetPlatforms()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one platform is required")
 	}
 
-	var req submitJobHTTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	resp, err := h.svc.SubmitJob(c.Request.Context(), userID, SubmitRequest{
-		Prompt:    req.Prompt,
-		ImageURL:  req.ImageURL,
-		Platforms: req.Platforms,
-		Caption:   req.Caption,
+	resp, err := h.svc.SubmitJob(ctx, req.GetUserId(), SubmitRequest{
+		Prompt:    req.GetPrompt(),
+		ImageURL:  req.GetImageUrl(),
+		Platforms: req.GetPlatforms(),
+		Caption:   req.GetCaption(),
 	})
 	if err != nil {
-		h.log.Error("Failed to submit job", zap.Error(err), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit job"})
-		return
+		h.log.Error("SubmitJob failed", zap.Error(err), zap.String("user_id", req.GetUserId()))
+		return nil, status.Errorf(codes.Internal, "failed to submit job")
 	}
 
-	c.JSON(http.StatusAccepted, resp)
+	return &orchestratorpb.SubmitJobResponse{
+		JobId:           resp.JobID,
+		Status:          resp.Status,
+		WsUrl:           resp.WsURL,
+		CreatedAtUnix:   resp.CreatedAt.Unix(),
+	}, nil
 }
 
-func (h *Handler) getJob(c *gin.Context) {
-	jobID := c.Param("job_id")
-
-	resp, err := h.svc.GetJob(c.Request.Context(), jobID)
-	if err != nil {
-		if errors.Is(err, ErrJobNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
-			return
-		}
-		h.log.Error("Failed to get job", zap.Error(err), zap.String("job_id", jobID))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve job"})
-		return
+// GetJob implements orchestratorpb.OrchestratorServiceServer.
+func (h *Handler) GetJob(ctx context.Context, req *orchestratorpb.GetJobRequest) (*orchestratorpb.GetJobResponse, error) {
+	if req.GetJobId() == "" || req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "job_id and user_id are required")
 	}
 
-	c.JSON(http.StatusOK, resp)
+	resp, err := h.svc.GetJob(ctx, req.GetJobId(), req.GetUserId())
+	if err != nil {
+		if errors.Is(err, ErrJobNotFound) {
+			return nil, status.Error(codes.NotFound, "job not found")
+		}
+		if errors.Is(err, ErrJobAccessDenied) {
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
+		h.log.Error("GetJob failed", zap.Error(err), zap.String("job_id", req.GetJobId()))
+		return nil, status.Errorf(codes.Internal, "failed to get job")
+	}
+
+	out := &orchestratorpb.GetJobResponse{
+		Id:                resp.ID,
+		Status:            resp.Status,
+		OriginalPrompt:    resp.OriginalPrompt,
+		RefinedPrompt:     resp.RefinedPrompt,
+		OriginalImageUrl:  resp.OriginalImageURL,
+		GeneratedImageUrl: resp.GeneratedImageURL,
+		CreatedAtUnix:     resp.CreatedAt.Unix(),
+	}
+	for _, pr := range resp.PostResults {
+		out.PostResults = append(out.PostResults, &orchestratorpb.PostResultMsg{
+			Id:              pr.ID,
+			JobId:           pr.JobID,
+			UserId:          pr.UserID,
+			Platform:        pr.Platform,
+			Status:          pr.Status,
+			PlatformPostId:  pr.PlatformPostID,
+			PlatformUrl:     pr.PlatformURL,
+			ErrorDetail:     pr.ErrorDetail,
+			AttemptCount:    int32(pr.AttemptCount),
+			CreatedAtUnix:   pr.CreatedAt.Unix(),
+		})
+	}
+	return out, nil
+}
+
+// ApproveJob implements orchestratorpb.OrchestratorServiceServer.
+func (h *Handler) ApproveJob(ctx context.Context, req *orchestratorpb.ApproveJobRequest) (*orchestratorpb.JobActionResponse, error) {
+	if req.GetJobId() == "" || req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "job_id and user_id are required")
+	}
+	if len(req.GetPlatforms()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one platform is required")
+	}
+
+	resp, err := h.svc.ApproveJob(ctx, req.GetJobId(), req.GetUserId(), model.ApproveJobRequest{
+		Caption:   req.GetCaption(),
+		Platforms: req.GetPlatforms(),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrJobNotFound):
+			return nil, status.Error(codes.NotFound, "job not found")
+		case errors.Is(err, ErrJobAccessDenied):
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		case errors.Is(err, ErrPreviewNotReady):
+			return nil, status.Error(codes.FailedPrecondition, "image preview not ready")
+		case errors.Is(err, ErrInvalidJobState):
+			return nil, status.Error(codes.FailedPrecondition, "job is not awaiting approval")
+		default:
+			h.log.Error("ApproveJob failed", zap.Error(err), zap.String("job_id", req.GetJobId()))
+			return nil, status.Errorf(codes.Internal, "failed to approve job")
+		}
+	}
+
+	return &orchestratorpb.JobActionResponse{
+		JobId:   resp.JobID,
+		Status:  resp.Status,
+		Message: resp.Message,
+	}, nil
+}
+
+// RejectJob implements orchestratorpb.OrchestratorServiceServer.
+func (h *Handler) RejectJob(ctx context.Context, req *orchestratorpb.RejectJobRequest) (*orchestratorpb.JobActionResponse, error) {
+	if req.GetJobId() == "" || req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "job_id and user_id are required")
+	}
+
+	resp, err := h.svc.RejectJob(ctx, req.GetJobId(), req.GetUserId(), model.RejectJobRequest{
+		Reason: req.GetReason(),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrJobNotFound):
+			return nil, status.Error(codes.NotFound, "job not found")
+		case errors.Is(err, ErrJobAccessDenied):
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		case errors.Is(err, ErrInvalidJobState):
+			return nil, status.Error(codes.FailedPrecondition, "job is not awaiting approval")
+		default:
+			h.log.Error("RejectJob failed", zap.Error(err), zap.String("job_id", req.GetJobId()))
+			return nil, status.Errorf(codes.Internal, "failed to reject job")
+		}
+	}
+
+	return &orchestratorpb.JobActionResponse{
+		JobId:   resp.JobID,
+		Status:  resp.Status,
+		Message: resp.Message,
+	}, nil
 }

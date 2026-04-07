@@ -50,6 +50,8 @@ type Config struct {
 	AWSAccessKeyID          string `mapstructure:"AWS_ACCESS_KEY_ID" optional:"true"`
 	AWSSecretAccessKey      string `mapstructure:"AWS_SECRET_ACCESS_KEY" optional:"true"`
 	AuthServiceAddr         string `mapstructure:"AUTH_SERVICE_ADDR" default:"localhost:9090"`
+	OrchestratorServiceAddr string `mapstructure:"ORCHESTRATOR_SERVICE_ADDR" default:"localhost:9091"`
+	OrchestratorGRPCPort    string `mapstructure:"ORCHESTRATOR_GRPC_PORT" default:"9091"`
 	JaegerEndpoint          string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
 	EncryptionKey           string `mapstructure:"ENCRYPTION_KEY" required:"true"`
 	PromptAgentSystemPrompt string `mapstructure:"PROMPT_AGENT_SYSTEM_PROMPT" optional:"true"`
@@ -58,6 +60,14 @@ type Config struct {
 	WhatsAppToken  string `mapstructure:"WHATSAPP_TOKEN" optional:"true"`
 	DiscordWebhook string `mapstructure:"DISCORD_WEBHOOK" optional:"true"`
 	TelegramToken  string `mapstructure:"TELEGRAM_TOKEN" optional:"true"`
+
+	// OAuth (optional; required only for HandleOAuthCallback on supported providers)
+	GoogleOAuthClientID     string `mapstructure:"GOOGLE_OAUTH_CLIENT_ID" optional:"true"`
+	GoogleOAuthClientSecret string `mapstructure:"GOOGLE_OAUTH_CLIENT_SECRET" optional:"true"`
+	GoogleOAuthRedirectURL  string `mapstructure:"GOOGLE_OAUTH_REDIRECT_URL" optional:"true"`
+	GithubOAuthClientID     string `mapstructure:"GITHUB_OAUTH_CLIENT_ID" optional:"true"`
+	GithubOAuthClientSecret string `mapstructure:"GITHUB_OAUTH_CLIENT_SECRET" optional:"true"`
+	GithubOAuthRedirectURL  string `mapstructure:"GITHUB_OAUTH_REDIRECT_URL" optional:"true"`
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +293,56 @@ type RegisterUserRequest struct {
 	Email       string `protobuf:"bytes,1" json:"email"`
 	Password    string `protobuf:"bytes,2" json:"password"`
 	DisplayName string `protobuf:"bytes,3" json:"display_name"`
+}
+
+// ---------------------------------------------------------------------------
+// gRPC Contracts — Orchestrator (canonical messages in api/proto/orchestrator.proto)
+// ---------------------------------------------------------------------------
+
+// OrchestratorSubmitJobRequest is the logical payload for SubmitJob RPC.
+type OrchestratorSubmitJobRequest struct {
+	UserID    string   `json:"user_id"`
+	Prompt    string   `json:"prompt"`
+	ImageURL  string   `json:"image_url"`
+	Platforms []string `json:"platforms"`
+	Caption   string   `json:"caption"`
+}
+
+// OrchestratorSubmitJobResponse is the logical response for SubmitJob RPC.
+type OrchestratorSubmitJobResponse struct {
+	JobID         string    `json:"job_id"`
+	Status        string    `json:"status"`
+	WsURL         string    `json:"ws_url"`
+	CreatedAtUnix int64     `json:"created_at_unix"`
+	CreatedAt     time.Time `json:"-"`
+}
+
+// OrchestratorGetJobRequest is the logical payload for GetJob RPC.
+type OrchestratorGetJobRequest struct {
+	JobID  string `json:"job_id"`
+	UserID string `json:"user_id"`
+}
+
+// OrchestratorApproveJobRequest is the logical payload for ApproveJob RPC.
+type OrchestratorApproveJobRequest struct {
+	JobID     string   `json:"job_id"`
+	UserID    string   `json:"user_id"`
+	Caption   string   `json:"caption"`
+	Platforms []string `json:"platforms"`
+}
+
+// OrchestratorRejectJobRequest is the logical payload for RejectJob RPC.
+type OrchestratorRejectJobRequest struct {
+	JobID  string `json:"job_id"`
+	UserID string `json:"user_id"`
+	Reason string `json:"reason"`
+}
+
+// OrchestratorJobActionGRPCResponse is the logical response for ApproveJob / RejectJob RPCs.
+type OrchestratorJobActionGRPCResponse struct {
+	JobID   string `json:"job_id"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 // ---------------------------------------------------------------------------

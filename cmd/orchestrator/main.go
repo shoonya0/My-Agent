@@ -2,19 +2,23 @@ package main
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"myAgent/internal/config"
 	"myAgent/internal/orchestrator"
-	"myAgent/pkg/httpserver"
+	"myAgent/pkg/grpcserver"
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/llm"
 	"myAgent/pkg/logger"
 	"myAgent/pkg/mysql"
 	apmotel "myAgent/pkg/otel"
+	"myAgent/pkg/redis"
 
-	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 const serviceName = "orchestrator"
@@ -23,6 +27,12 @@ func main() {
 	cfg := config.Load()
 	log := logger.New(cfg.LogLevel)
 	defer log.Sync()
+
+	log.Info("Starting orchestrator",
+		zap.String("service", serviceName),
+		zap.String("grpc_port", cfg.OrchestratorGRPCPort),
+		zap.String("log_level", cfg.LogLevel),
+	)
 
 	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
@@ -36,6 +46,9 @@ func main() {
 	}
 	defer db.Close()
 
+	rdb := redis.InitRedis(cfg, log)
+	defer rdb.Close()
+
 	producer, err := kafka.NewProducer(cfg.KafkaBrokers, log)
 	if err != nil {
 		log.Fatal("Failed to create Kafka producer", zap.Error(err))
@@ -45,16 +58,21 @@ func main() {
 	llmClient := llm.NewClient(cfg.OpenAIKey, cfg.OrchestratorModel, log)
 
 	repo := orchestrator.NewRepository(db)
-	svc := orchestrator.NewService(repo, producer, llmClient, log)
+	svc := orchestrator.NewService(repo, producer, llmClient, rdb, log)
 	h := orchestrator.NewHandler(svc, log)
 
-	r := gin.Default()
-	r.SetTrustedProxies([]string{"127.0.0.1"})
-	r.Use(otelgin.Middleware(serviceName))
-	h.RegisterRoutes(r)
-
-	log.Info("Starting orchestrator HTTP server", zap.String("port", cfg.OrchestratorPort))
-	if err := httpserver.Start(":"+cfg.OrchestratorPort, r); err != nil {
-		log.Fatal("HTTP server error", zap.Error(err))
+	grpcOpts := []grpc.ServerOption{
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	}
+
+	grpcSrv, err := grpcserver.Start(cfg.OrchestratorGRPCPort, h.GRPCRegistrar(), log, grpcOpts...)
+	if err != nil {
+		log.Fatal("Failed to start gRPC server", zap.Error(err))
+	}
+	defer grpcSrv.GracefulStop()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Info("Shutdown signal received, stopping gRPC server")
 }

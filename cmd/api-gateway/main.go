@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"myAgent/api/authpb"
+	"myAgent/api/orchestratorpb"
 	"myAgent/internal/apigateway"
 	"myAgent/internal/config"
 	"myAgent/internal/credentials"
@@ -14,6 +15,7 @@ import (
 	"myAgent/pkg/mysql"
 	apmotel "myAgent/pkg/otel"
 	"myAgent/pkg/redis"
+	"myAgent/pkg/storage"
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
@@ -39,6 +41,19 @@ func dialAuthService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
 		log.Fatal("Failed to dial auth-service", zap.String("addr", cfg.AuthServiceAddr), zap.Error(err))
 	}
 	log.Info("Connected to auth-service gRPC", zap.String("addr", cfg.AuthServiceAddr))
+	return conn
+}
+
+func dialOrchestratorService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
+	conn, err := grpc.NewClient(
+		cfg.OrchestratorServiceAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
+	if err != nil {
+		log.Fatal("Failed to dial orchestrator", zap.String("addr", cfg.OrchestratorServiceAddr), zap.Error(err))
+	}
+	log.Info("Connected to orchestrator gRPC", zap.String("addr", cfg.OrchestratorServiceAddr))
 	return conn
 }
 
@@ -90,14 +105,30 @@ func main() {
 	// it creates a new auth client using the auth connection that was created in the dialAuthService function
 	authClient := authpb.NewAuthServiceClient(authConn)
 
+	orchConn := dialOrchestratorService(cfg, log)
+	defer orchConn.Close()
+	orchClient := orchestratorpb.NewOrchestratorServiceClient(orchConn)
+
+	uploader, err := storage.NewS3Uploader(
+		context.Background(),
+		cfg.AWSBucket,
+		cfg.AWSEndpoint,
+		cfg.AWSRegion,
+		cfg.AWSAccessKeyID,
+		cfg.AWSSecretAccessKey,
+		log,
+	)
+	if err != nil {
+		log.Fatal("Failed to create S3 uploader", zap.Error(err))
+	}
+
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
 
 	// it uses the otelgin middleware to trace the requests
 	r.Use(otelgin.Middleware(serviceName))
 
-	// it creates a new gateway handler using the configuration, Redis database connection, auth client, and credentials handler
-	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient, credHandler)
+	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient, orchClient, uploader, credHandler)
 	handler.RegisterRoutes(r, log)
 
 	log.Info("HTTP server ready", zap.String("port", cfg.APIGatewayPort))

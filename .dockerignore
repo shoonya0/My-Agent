@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# IDE / local
+.cursor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Env and secrets (inject via compose env_file or runtime)
+config.env
+.env
+.env.*
+!.env.example
+
+# Logs and temp
+*.log
+tmp/
+temp/
+
+# Documentation (not needed for go build)
+*.md
+!README.md
+
+# Tests (optional: remove next line if you run tests inside Docker build)
+**/*_test.go
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Agent / tooling
+agent-transcripts
