@@ -72,7 +72,10 @@ func (wa *WhatsApp) Publish(ctx context.Context, req model.PostRequest) (*model.
 		},
 	}
 
-	payload, _ := json.Marshal(body)
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request payload: %w", err)
+	}
 	endpoint := fmt.Sprintf("%s/%s/messages", whatsappAPIBase, phoneNumberID)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))

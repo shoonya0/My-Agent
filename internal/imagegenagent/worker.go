@@ -11,12 +11,12 @@ import (
 	"myAgent/pkg/comfyui"
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/model"
+	apmotel "myAgent/pkg/otel"
 	"myAgent/pkg/storage"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
@@ -144,7 +144,7 @@ func (w *Worker) handle(ctx context.Context, msg *kafka.Message) error {
 		ImageURL:      imageURL,
 		ComfyPromptID: promptID,
 		GenerationMs:  result.Duration.Milliseconds(),
-		TraceCtx:      extractTraceCtx(ctx),
+		TraceCtx:      apmotel.ExtractTraceContext(ctx),
 	}
 
 	if err := w.producer.Publish(ctx, topicGenerated, event.JobID, genEvent); err != nil {
@@ -175,7 +175,7 @@ func (w *Worker) publishFailure(ctx context.Context, jobID, userID, errMsg strin
 		UserID:       userID,
 		FailedAt:     serviceName,
 		ErrorMessage: errMsg,
-		TraceCtx:     extractTraceCtx(ctx),
+		TraceCtx:     apmotel.ExtractTraceContext(ctx),
 	}
 	if err := w.producer.Publish(ctx, topicJobFailed, jobID, evt); err != nil {
 		w.log.Error("Failed to publish job.failed event",
@@ -267,10 +267,4 @@ func resolveCheckpoint(preset string) string {
 		return preset
 	}
 	return "sd_xl_base_1.0.safetensors"
-}
-
-func extractTraceCtx(ctx context.Context) map[string]string {
-	carrier := propagation.MapCarrier{}
-	otel.GetTextMapPropagator().Inject(ctx, carrier)
-	return carrier
 }

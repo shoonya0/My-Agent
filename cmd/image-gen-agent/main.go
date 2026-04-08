@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -24,8 +26,13 @@ const (
 
 func main() {
 	cfg := config.Load()
-	log := logger.New(cfg.LogLevel)
-	defer log.Sync()
+	log, closeLog := logger.New(cfg.LogLevel)
+	defer func() {
+		_ = log.Sync()
+		if err := closeLog(); err != nil {
+			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		}
+	}()
 
 	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {

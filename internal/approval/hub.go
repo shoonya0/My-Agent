@@ -8,13 +8,13 @@ import (
 
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/model"
+	apmotel "myAgent/pkg/otel"
 	"myAgent/pkg/storage"
 	ws "myAgent/pkg/websocket"
 
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
@@ -114,8 +114,9 @@ func (s *Service) handleImageGenerated(ctx context.Context, msg *kafka.Message) 
 	}
 
 	preview := model.JobPreviewCache{
-		SignedURL:  previewURL,
+		SignedURL: previewURL,
 		ImageURL:  event.ImageURL,
+		UserID:    event.UserID,
 		ExpiresAt: time.Now().Add(previewTTL),
 	}
 
@@ -170,13 +171,22 @@ func (s *Service) Approve(ctx context.Context, jobID, userID string, req model.A
 		return nil, fmt.Errorf("get preview for job %s: %w", jobID, err)
 	}
 
+	if preview.UserID != userID {
+		s.log.Warn("Job ownership verification failed",
+			zap.String("job_id", jobID),
+			zap.String("expected_user", preview.UserID),
+			zap.String("actual_user", userID),
+		)
+		return nil, fmt.Errorf("access denied: job %s does not belong to user %s", jobID, userID)
+	}
+
 	event := model.ImageApprovedEvent{
 		JobID:     jobID,
 		UserID:    userID,
 		ImageURL:  preview.ImageURL,
 		Caption:   req.Caption,
 		Platforms: req.Platforms,
-		TraceCtx:  extractTraceCtx(ctx),
+		TraceCtx:  apmotel.ExtractTraceContext(ctx),
 	}
 
 	if err := s.producer.Publish(ctx, topicApproved, jobID, event); err != nil {
@@ -300,7 +310,7 @@ func (s *Service) publishFailure(ctx context.Context, jobID, userID, errMsg stri
 		UserID:       userID,
 		FailedAt:     serviceName,
 		ErrorMessage: errMsg,
-		TraceCtx:     extractTraceCtx(ctx),
+		TraceCtx:     apmotel.ExtractTraceContext(ctx),
 	}
 	if err := s.producer.Publish(ctx, topicJobFailed, jobID, evt); err != nil {
 		s.log.Error("Failed to publish job.failed event",
@@ -308,10 +318,4 @@ func (s *Service) publishFailure(ctx context.Context, jobID, userID, errMsg stri
 			zap.String("job_id", jobID),
 		)
 	}
-}
-
-func extractTraceCtx(ctx context.Context) map[string]string {
-	carrier := propagation.MapCarrier{}
-	otel.GetTextMapPropagator().Inject(ctx, carrier)
-	return carrier
 }

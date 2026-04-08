@@ -3,12 +3,11 @@ package credentials
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"myAgent/pkg/dbutil"
 	"myAgent/pkg/model"
 )
 
@@ -56,8 +55,8 @@ func (r *mysqlRepository) Upsert(ctx context.Context, cred *model.PlatformCreden
 	_, err := r.db.ExecContext(ctx, q,
 		cred.ID, cred.UserID, cred.Platform,
 		cred.AccessTokenEnc, cred.RefreshTokenEnc,
-		cred.TokenExpiry, jsonStringSlice(cred.Scopes),
-		cred.PlatformUserID, jsonMap(cred.Metadata),
+		cred.TokenExpiry, dbutil.JSONStringSlice(cred.Scopes),
+		cred.PlatformUserID, dbutil.JSONMap(cred.Metadata),
 		cred.CreatedAt, cred.UpdatedAt,
 	)
 	if err != nil {
@@ -74,8 +73,8 @@ func (r *mysqlRepository) GetByUserAndPlatform(ctx context.Context, userID, plat
 		WHERE user_id = ? AND platform = ?`
 
 	var cred model.PlatformCredential
-	var scopes jsonStringSlice
-	var metadata jsonMap
+	var scopes dbutil.JSONStringSlice
+	var metadata dbutil.JSONMap
 
 	err := r.db.QueryRowContext(ctx, q, userID, platform).Scan(
 		&cred.ID, &cred.UserID, &cred.Platform,
@@ -112,8 +111,8 @@ func (r *mysqlRepository) ListByUser(ctx context.Context, userID string) ([]mode
 	var creds []model.PlatformCredential
 	for rows.Next() {
 		var c model.PlatformCredential
-		var scopes jsonStringSlice
-		var metadata jsonMap
+		var scopes dbutil.JSONStringSlice
+		var metadata dbutil.JSONMap
 		if err := rows.Scan(
 			&c.ID, &c.UserID, &c.Platform,
 			&c.AccessTokenEnc, &c.RefreshTokenEnc,
@@ -145,66 +144,4 @@ func (r *mysqlRepository) Delete(ctx context.Context, userID, platform string) e
 		return ErrCredentialNotFound
 	}
 	return nil
-}
-
-// jsonStringSlice adapts []string for MySQL JSON columns.
-type jsonStringSlice []string
-
-func (s jsonStringSlice) Value() (driver.Value, error) {
-	if s == nil {
-		return "[]", nil
-	}
-	b, err := json.Marshal(s)
-	if err != nil {
-		return nil, fmt.Errorf("credentials: marshal scopes: %w", err)
-	}
-	return string(b), nil
-}
-
-func (s *jsonStringSlice) Scan(src any) error {
-	if src == nil {
-		*s = nil
-		return nil
-	}
-	var data []byte
-	switch v := src.(type) {
-	case []byte:
-		data = v
-	case string:
-		data = []byte(v)
-	default:
-		return fmt.Errorf("credentials: cannot scan %T into jsonStringSlice", src)
-	}
-	return json.Unmarshal(data, s)
-}
-
-// jsonMap adapts map[string]string for MySQL JSON columns.
-type jsonMap map[string]string
-
-func (m jsonMap) Value() (driver.Value, error) {
-	if m == nil {
-		return "{}", nil
-	}
-	b, err := json.Marshal(m)
-	if err != nil {
-		return nil, fmt.Errorf("credentials: marshal metadata: %w", err)
-	}
-	return string(b), nil
-}
-
-func (m *jsonMap) Scan(src any) error {
-	if src == nil {
-		*m = nil
-		return nil
-	}
-	var data []byte
-	switch v := src.(type) {
-	case []byte:
-		data = v
-	case string:
-		data = []byte(v)
-	default:
-		return fmt.Errorf("credentials: cannot scan %T into jsonMap", src)
-	}
-	return json.Unmarshal(data, m)
 }

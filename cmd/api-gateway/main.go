@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"myAgent/api/authpb"
 	"myAgent/api/orchestratorpb"
@@ -59,8 +61,13 @@ func dialOrchestratorService(cfg *model.Config, log *zap.Logger) *grpc.ClientCon
 
 func main() {
 	cfg := config.Load()
-	log := logger.New(cfg.LogLevel)
-	defer log.Sync()
+	log, closeLog := logger.New(cfg.LogLevel)
+	defer func() {
+		_ = log.Sync()
+		if err := closeLog(); err != nil {
+			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		}
+	}()
 
 	log.Info("Starting api-gateway",
 		zap.String("service", serviceName),

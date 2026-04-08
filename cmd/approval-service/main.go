@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -26,8 +28,13 @@ const (
 
 func main() {
 	cfg := config.Load()
-	log := logger.New(cfg.LogLevel)
-	defer log.Sync()
+	log, closeLog := logger.New(cfg.LogLevel)
+	defer func() {
+		_ = log.Sync()
+		if err := closeLog(); err != nil {
+			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		}
+	}()
 
 	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
 	if err != nil {
@@ -94,9 +101,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	consumerErr := make(chan error, 1)
 	go func() {
 		if err := svc.ListenAndNotify(ctx); err != nil {
 			log.Error("Consumer loop error", zap.Error(err))
+			consumerErr <- err
 		}
 	}()
 
@@ -106,9 +115,22 @@ func main() {
 		zap.String("consumer_group", consumerGroupID),
 	)
 
-	// ---- HTTP server (blocks until signal) ----
-	if err := httpserver.Start(":"+cfg.ApprovalServicePort, h.Routes()); err != nil {
+	// ---- Start HTTP server in background and monitor consumer ----
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := httpserver.Start(":"+cfg.ApprovalServicePort, h.Routes()); err != nil {
+			serverErr <- err
+		}
+	}()
+
+	// Fail fast if either consumer or HTTP server encounters an error
+	select {
+	case err := <-consumerErr:
+		log.Fatal("Consumer failed, shutting down", zap.Error(err))
+	case err := <-serverErr:
 		log.Fatal("HTTP server error", zap.Error(err))
+	case <-ctx.Done():
+		log.Info("Shutdown signal received")
 	}
 
 	log.Info("Approval-service shut down gracefully")

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"myAgent/internal/auth"
 	"myAgent/internal/config"
@@ -26,9 +28,13 @@ func main() {
 	cfg := config.Load()
 
 	// it creates a new logger instance
-	log := logger.New(cfg.LogLevel)
-	// it syncs the logger
-	defer log.Sync()
+	log, closeLog := logger.New(cfg.LogLevel)
+	defer func() {
+		_ = log.Sync()
+		if err := closeLog(); err != nil {
+			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		}
+	}()
 
 	log.Info("Starting auth-service",
 		zap.String("service", serviceName),

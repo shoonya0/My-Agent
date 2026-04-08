@@ -71,3 +71,12 @@ func InitTracer(ctx context.Context, serviceName, endpoint string) (shutdown fun
 
 	return shutdown, nil
 }
+
+// ExtractTraceContext extracts the trace context from the given context and
+// returns it as a map suitable for Kafka event propagation. This enables
+// distributed tracing across async boundaries (e.g., Kafka events).
+func ExtractTraceContext(ctx context.Context) map[string]string {
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	return carrier
+}

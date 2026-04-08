@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
+	"myAgent/pkg/httputil"
 	"myAgent/pkg/model"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +23,7 @@ func JWTMiddleware(secret string, rdb *redis.Client) gin.HandlerFunc {
 	signingKey := []byte(secret)
 
 	return func(c *gin.Context) {
-		token, err := extractBearerToken(c)
+		token, err := httputil.ExtractBearerToken(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
@@ -63,25 +63,6 @@ type CustomClaims struct {
 	Roles  []string `json:"roles"`
 	Email  string   `json:"email"`
 	jwt.RegisteredClaims
-}
-
-func extractBearerToken(c *gin.Context) (string, error) {
-	header := c.GetHeader("Authorization")
-	if header == "" {
-		return "", errors.New("authorization header is required")
-	}
-
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return "", errors.New("authorization header must be in the format: Bearer <token>")
-	}
-
-	token := strings.TrimSpace(parts[1])
-	if token == "" {
-		return "", errors.New("token is empty")
-	}
-
-	return token, nil
 }
 
 func parseToken(tokenString string, signingKey []byte) (*CustomClaims, error) {

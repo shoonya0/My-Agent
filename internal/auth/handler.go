@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"myAgent/api/authpb"
 	"myAgent/pkg/grpcserver"
+	"myAgent/pkg/httputil"
 	"myAgent/pkg/messages"
 	"myAgent/pkg/model"
 
@@ -228,12 +228,9 @@ func (h *Handler) login(c *gin.Context) {
 }
 
 func (h *Handler) logout(c *gin.Context) {
-	token := extractBearerToken(c)
-	if token == "" {
-		c.JSON(http.StatusBadRequest, messages.ErrorResponse(
-			messages.ErrCodeTokenMissing,
-			messages.MsgTokenMissing,
-		))
+	token, err := httputil.ExtractBearerToken(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -268,13 +265,4 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 			messages.MsgInternalServerError,
 		))
 	}
-}
-
-func extractBearerToken(c *gin.Context) string {
-	header := c.GetHeader("Authorization")
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-		return strings.TrimSpace(parts[1])
-	}
-	return ""
 }

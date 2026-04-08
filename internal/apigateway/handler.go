@@ -5,13 +5,13 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"myAgent/api/authpb"
 	"myAgent/api/orchestratorpb"
 	"myAgent/internal/credentials"
 	"myAgent/internal/middleware"
+	"myAgent/pkg/httputil"
 	"myAgent/pkg/messages"
 	"myAgent/pkg/model"
 	"myAgent/pkg/storage"
@@ -186,16 +186,13 @@ func (h *GatewayHandler) Login(c *gin.Context, log *zap.Logger) {
 
 // Logout revokes the current access token via auth-service gRPC.
 func (h *GatewayHandler) Logout(c *gin.Context, log *zap.Logger) {
-	token := extractBearerToken(c)
-	if token == "" {
-		c.JSON(http.StatusBadRequest, messages.ErrorResponse(
-			messages.ErrCodeTokenMissing,
-			messages.MsgTokenMissing,
-		))
+	token, err := httputil.ExtractBearerToken(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	_, err := h.authClient.Logout(c.Request.Context(), &authpb.LogoutRequest{
+	_, err = h.authClient.Logout(c.Request.Context(), &authpb.LogoutRequest{
 		Token: token,
 	})
 	if err != nil {
@@ -278,15 +275,6 @@ func (h *GatewayHandler) OAuthCallback(c *gin.Context, log *zap.Logger) {
 		messages.MsgLoginSuccess,
 		protoToTokenResponse(pbResp),
 	))
-}
-
-func extractBearerToken(c *gin.Context) string {
-	header := c.GetHeader("Authorization")
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-		return strings.TrimSpace(parts[1])
-	}
-	return ""
 }
 
 // Me returns the authenticated user's profile from the JWT claims.

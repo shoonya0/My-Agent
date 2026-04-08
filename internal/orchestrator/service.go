@@ -10,12 +10,12 @@ import (
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/llm"
 	"myAgent/pkg/model"
+	apmotel "myAgent/pkg/otel"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
@@ -113,7 +113,7 @@ func (s *orchestratorService) SubmitJob(ctx context.Context, userID string, req 
 		OriginalPrompt: req.Prompt,
 		ImageURL:       req.ImageURL,
 		ExecutionPlan:  *plan,
-		TraceCtx:       extractTraceCtx(ctx),
+		TraceCtx:       apmotel.ExtractTraceContext(ctx),
 		PublishedAt:    time.Now(),
 	}
 	if err := s.producer.Publish(ctx, topicPromptRefineRequested, jobID, event); err != nil {
@@ -195,7 +195,7 @@ func (s *orchestratorService) ApproveJob(ctx context.Context, jobID, userID stri
 		ImageURL:  imageURL,
 		Caption:   req.Caption,
 		Platforms: req.Platforms,
-		TraceCtx:  extractTraceCtx(ctx),
+		TraceCtx:  apmotel.ExtractTraceContext(ctx),
 	}
 	if err := s.producer.Publish(ctx, topicImageApproved, jobID, event); err != nil {
 		return nil, fmt.Errorf("orchestrator: publish image.approved: %w", err)
@@ -252,7 +252,7 @@ func (s *orchestratorService) RejectJob(ctx context.Context, jobID, userID strin
 		UserID:       userID,
 		FailedAt:     serviceName,
 		ErrorMessage: reason,
-		TraceCtx:     extractTraceCtx(ctx),
+		TraceCtx:     apmotel.ExtractTraceContext(ctx),
 	}
 	if err := s.producer.Publish(ctx, topicJobFailed, jobID, evt); err != nil {
 		s.log.Error("Failed to publish job.failed on reject",
@@ -329,7 +329,7 @@ func (s *orchestratorService) failJob(ctx context.Context, jobID, userID, errMsg
 		UserID:       userID,
 		FailedAt:     serviceName,
 		ErrorMessage: errMsg,
-		TraceCtx:     extractTraceCtx(ctx),
+		TraceCtx:     apmotel.ExtractTraceContext(ctx),
 	}
 	if err := s.producer.Publish(ctx, topicJobFailed, jobID, evt); err != nil {
 		s.log.Error("Failed to publish job.failed event",
@@ -357,9 +357,3 @@ func (s *orchestratorService) recordTransition(ctx context.Context, jobID, from,
 	}
 }
 
-// extractTraceCtx returns the W3C trace context map for Kafka event propagation.
-func extractTraceCtx(ctx context.Context) map[string]string {
-	carrier := propagation.MapCarrier{}
-	otel.GetTextMapPropagator().Inject(ctx, carrier)
-	return carrier
-}

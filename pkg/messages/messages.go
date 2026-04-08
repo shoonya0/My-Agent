@@ -129,18 +129,6 @@ func ErrorResponse(code, message string) Response {
 	}
 }
 
-// ErrorResponseWithDetails creates a standardized error response with additional details.
-func ErrorResponseWithDetails(code, message, details string) Response {
-	return Response{
-		Success: false,
-		Error: &ErrorInfo{
-			Code:    code,
-			Message: message,
-			Details: details,
-		},
-	}
-}
-
 // ErrorResponseWithField creates a standardized error response with field information.
 func ErrorResponseWithField(code, message, field string) Response {
 	return Response{

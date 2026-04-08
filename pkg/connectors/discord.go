@@ -61,7 +61,10 @@ func (d *Discord) Publish(ctx context.Context, req model.PostRequest) (*model.Pu
 		},
 	}
 
-	payload, _ := json.Marshal(body)
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request payload: %w", err)
+	}
 
 	// ?wait=true makes Discord return the created message object.
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL+"?wait=true", bytes.NewReader(payload))

@@ -3,12 +3,11 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"myAgent/pkg/dbutil"
 	"myAgent/pkg/model"
 )
 
@@ -18,7 +17,6 @@ var ErrUserNotFound = errors.New("auth: user not found")
 // Repository defines the data-access contract for user records.
 type Repository interface {
 	CreateUser(ctx context.Context, user *model.User) error
-	GetUserByID(ctx context.Context, id string) (*model.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	GetUserByProviderID(ctx context.Context, provider, providerID string) (*model.User, error)
 	UpdateUser(ctx context.Context, user *model.User) error
@@ -45,18 +43,12 @@ func (r *mysqlRepository) CreateUser(ctx context.Context, user *model.User) erro
 	_, err := r.db.ExecContext(ctx, q,
 		user.ID, user.Email, user.PasswordHash, user.DisplayName,
 		user.AvatarURL, user.Provider, user.ProviderID,
-		jsonStringSlice(user.Roles), user.CreatedAt, user.UpdatedAt,
+		dbutil.JSONStringSlice(user.Roles), user.CreatedAt, user.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("auth: create user: %w", err)
 	}
 	return nil
-}
-
-func (r *mysqlRepository) GetUserByID(ctx context.Context, id string) (*model.User, error) {
-	const q = `SELECT id, email, password_hash, display_name, avatar_url, provider, provider_id, roles, created_at, updated_at
-		FROM users WHERE id = ?`
-	return r.scanUser(ctx, q, id)
 }
 
 func (r *mysqlRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
@@ -81,7 +73,7 @@ func (r *mysqlRepository) UpdateUser(ctx context.Context, user *model.User) erro
 
 	res, err := r.db.ExecContext(ctx, q,
 		user.Email, user.DisplayName, user.AvatarURL,
-		jsonStringSlice(user.Roles), user.UpdatedAt, user.ID,
+		dbutil.JSONStringSlice(user.Roles), user.UpdatedAt, user.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("auth: update user: %w", err)
@@ -99,7 +91,7 @@ func (r *mysqlRepository) UpdateUser(ctx context.Context, user *model.User) erro
 
 func (r *mysqlRepository) scanUser(ctx context.Context, query string, args ...any) (*model.User, error) {
 	var u model.User
-	var roles jsonStringSlice
+	var roles dbutil.JSONStringSlice
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName, &u.AvatarURL,
@@ -113,35 +105,4 @@ func (r *mysqlRepository) scanUser(ctx context.Context, query string, args ...an
 	}
 	u.Roles = roles
 	return &u, nil
-}
-
-// jsonStringSlice adapts []string for MySQL JSON columns.
-type jsonStringSlice []string
-
-func (s jsonStringSlice) Value() (driver.Value, error) {
-	if s == nil {
-		return "[]", nil
-	}
-	b, err := json.Marshal(s)
-	if err != nil {
-		return nil, fmt.Errorf("auth: marshal roles: %w", err)
-	}
-	return string(b), nil
-}
-
-func (s *jsonStringSlice) Scan(src any) error {
-	if src == nil {
-		*s = nil
-		return nil
-	}
-	var data []byte
-	switch v := src.(type) {
-	case []byte:
-		data = v
-	case string:
-		data = []byte(v)
-	default:
-		return fmt.Errorf("auth: cannot scan %T into jsonStringSlice", src)
-	}
-	return json.Unmarshal(data, s)
 }

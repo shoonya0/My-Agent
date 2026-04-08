@@ -16,7 +16,10 @@ const (
 // a log file. The log file is created if it doesn't exist and truncated on
 // every call (clearing previous runs). level should be one of zap's level
 // strings: debug, info, warn, error, dpanic, panic, fatal.
-func New(level string) *zap.Logger {
+//
+// The returned closeFunc must be called during shutdown (typically deferred
+// after zap.Logger.Sync) to release the log file handle.
+func New(level string) (*zap.Logger, func() error) {
 	zapLevel := parseLevel(level)
 
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
@@ -26,6 +29,10 @@ func New(level string) *zap.Logger {
 	file, err := os.Create(logFile)
 	if err != nil {
 		panic("logger: failed to create log file: " + err.Error())
+	}
+
+	closeFunc := func() error {
+		return file.Close()
 	}
 
 	encCfg := zap.NewProductionEncoderConfig()
@@ -41,7 +48,7 @@ func New(level string) *zap.Logger {
 		zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), zapLevel),
 	)
 
-	return zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+	return zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel)), closeFunc
 }
 
 func parseLevel(level string) zapcore.Level {

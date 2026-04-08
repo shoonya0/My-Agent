@@ -75,11 +75,14 @@ func (ig *Instagram) Publish(ctx context.Context, req model.PostRequest) (*model
 }
 
 func (ig *Instagram) createMediaContainer(ctx context.Context, req model.PostRequest, token string) (string, error) {
-	payload, _ := json.Marshal(map[string]string{
+	payload, err := json.Marshal(map[string]string{
 		"image_url":    req.MediaURL,
 		"caption":      req.Caption,
 		"access_token": token,
 	})
+	if err != nil {
+		return "", fmt.Errorf("marshal request payload: %w", err)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, instagramAPIBase+"/media", bytes.NewReader(payload))
 	if err != nil {
@@ -108,10 +111,13 @@ func (ig *Instagram) createMediaContainer(ctx context.Context, req model.PostReq
 }
 
 func (ig *Instagram) publishContainer(ctx context.Context, containerID string, token string) (string, error) {
-	payload, _ := json.Marshal(map[string]string{
+	payload, err := json.Marshal(map[string]string{
 		"creation_id":  containerID,
 		"access_token": token,
 	})
+	if err != nil {
+		return "", fmt.Errorf("marshal request payload: %w", err)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, instagramAPIBase+"/media_publish", bytes.NewReader(payload))
 	if err != nil {

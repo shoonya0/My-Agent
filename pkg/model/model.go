@@ -155,12 +155,9 @@ type PostResult struct {
 const (
 	JobStatusPending          = "pending"
 	JobStatusRefining         = "refining"
-	JobStatusGenerating       = "generating"
 	JobStatusAwaitingApproval = "awaiting_approval"
-	JobStatusApproved         = "approved"
 	JobStatusRejected         = "rejected"
 	JobStatusDistributing     = "distributing"
-	JobStatusDone             = "done"
 	JobStatusFailed           = "failed"
 )
 
@@ -257,12 +254,6 @@ type ListCredentialsResponse struct {
 	Credentials []PlatformCredentialResponse `json:"credentials"`
 }
 
-// AuthCallbackRequest captures the OAuth2 callback query parameters.
-type AuthCallbackRequest struct {
-	Code  string `form:"code" validate:"required"`
-	State string `form:"state" validate:"required"`
-}
-
 // TokenResponse is returned to the client after a successful OAuth exchange.
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -271,78 +262,11 @@ type TokenResponse struct {
 	TokenType    string `json:"token_type"`
 }
 
-// ---------------------------------------------------------------------------
-// gRPC Contracts (mirror structs — canonical definition in api/proto/auth.proto)
-// ---------------------------------------------------------------------------
-
-// ValidateTokenRequest is the gRPC request from api-gateway to auth-service.
-type ValidateTokenRequest struct {
-	Token string `protobuf:"bytes,1,opt,name=token" json:"token"`
-}
-
-// Claims is the gRPC response carrying validated JWT claims.
+// Claims is the gRPC response carrying validated JWT claims (used by auth-service and middleware).
 type Claims struct {
 	UserID    string   `protobuf:"bytes,1" json:"user_id"`
 	Roles     []string `protobuf:"bytes,2" json:"roles"`
 	ExpiresAt int64    `protobuf:"varint,3" json:"expires_at"`
-}
-
-// RegisterUserRequest is the gRPC request from api-gateway to auth-service
-// for user registration.
-type RegisterUserRequest struct {
-	Email       string `protobuf:"bytes,1" json:"email"`
-	Password    string `protobuf:"bytes,2" json:"password"`
-	DisplayName string `protobuf:"bytes,3" json:"display_name"`
-}
-
-// ---------------------------------------------------------------------------
-// gRPC Contracts — Orchestrator (canonical messages in api/proto/orchestrator.proto)
-// ---------------------------------------------------------------------------
-
-// OrchestratorSubmitJobRequest is the logical payload for SubmitJob RPC.
-type OrchestratorSubmitJobRequest struct {
-	UserID    string   `json:"user_id"`
-	Prompt    string   `json:"prompt"`
-	ImageURL  string   `json:"image_url"`
-	Platforms []string `json:"platforms"`
-	Caption   string   `json:"caption"`
-}
-
-// OrchestratorSubmitJobResponse is the logical response for SubmitJob RPC.
-type OrchestratorSubmitJobResponse struct {
-	JobID         string    `json:"job_id"`
-	Status        string    `json:"status"`
-	WsURL         string    `json:"ws_url"`
-	CreatedAtUnix int64     `json:"created_at_unix"`
-	CreatedAt     time.Time `json:"-"`
-}
-
-// OrchestratorGetJobRequest is the logical payload for GetJob RPC.
-type OrchestratorGetJobRequest struct {
-	JobID  string `json:"job_id"`
-	UserID string `json:"user_id"`
-}
-
-// OrchestratorApproveJobRequest is the logical payload for ApproveJob RPC.
-type OrchestratorApproveJobRequest struct {
-	JobID     string   `json:"job_id"`
-	UserID    string   `json:"user_id"`
-	Caption   string   `json:"caption"`
-	Platforms []string `json:"platforms"`
-}
-
-// OrchestratorRejectJobRequest is the logical payload for RejectJob RPC.
-type OrchestratorRejectJobRequest struct {
-	JobID  string `json:"job_id"`
-	UserID string `json:"user_id"`
-	Reason string `json:"reason"`
-}
-
-// OrchestratorJobActionGRPCResponse is the logical response for ApproveJob / RejectJob RPCs.
-type OrchestratorJobActionGRPCResponse struct {
-	JobID   string `json:"job_id"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
 }
 
 // ---------------------------------------------------------------------------
@@ -426,20 +350,12 @@ type WSSessionEntry struct {
 	ConnectedAt time.Time `json:"connected_at"`
 }
 
-// OAuthStateEntry is CSRF protection data for OAuth2 flows. Stored at key
-// oauth:state:{state} with a 10-minute TTL.
-type OAuthStateEntry struct {
-	UserAgent string    `json:"user_agent"`
-	IP        string    `json:"ip"`
-	Provider  string    `json:"provider"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // JobPreviewCache holds the signed S3 URL for a generated image preview.
 // Stored at key job:preview:{job_id} with a 1-hour TTL.
 type JobPreviewCache struct {
 	SignedURL string    `json:"signed_url"`
 	ImageURL  string    `json:"image_url"`
+	UserID    string    `json:"user_id"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
