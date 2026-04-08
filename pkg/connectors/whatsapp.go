@@ -19,38 +19,34 @@ import (
 const whatsappAPIBase = "https://graph.facebook.com/v21.0"
 
 // WhatsApp publishes images via the WhatsApp Business Cloud API.
-// Requires metadata keys "whatsapp_phone_number_id" and "whatsapp_recipient"
-// on every PostRequest.
+// Requires metadata keys whatsapp_token, whatsapp_phone_number_id, and
+// whatsapp_recipient on every PostRequest.
 type WhatsApp struct {
-	token  string
 	client *http.Client
 }
 
-// NewWhatsApp creates a WhatsApp connector using the given API bearer token.
-func NewWhatsApp(token string) *WhatsApp {
+// NewWhatsApp creates a stateless WhatsApp connector.
+func NewWhatsApp() *WhatsApp {
 	return &WhatsApp{
-		token:  token,
 		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 func (wa *WhatsApp) Name() string { return "whatsapp" }
 
-func (wa *WhatsApp) Validate(_ context.Context) error {
-	if wa.token == "" {
-		return fmt.Errorf("whatsapp: bearer token is not configured")
-	}
-	return nil
-}
+func (wa *WhatsApp) Validate(context.Context) error { return nil }
 
 func (wa *WhatsApp) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "whatsapp.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "whatsapp"))
 
-	token := wa.token
-	if override := req.Metadata["whatsapp_token"]; override != "" {
-		token = override
+	token := req.Metadata["whatsapp_token"]
+	if token == "" {
+		err := fmt.Errorf("whatsapp: metadata must include whatsapp_token")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	phoneNumberID := req.Metadata["whatsapp_phone_number_id"]

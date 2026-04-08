@@ -3,6 +3,7 @@ package distribution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -169,14 +170,23 @@ func (s *Service) publishToPlatform(
 
 	token, credMeta, err := s.credSvc.GetDecryptedToken(ctx, evt.UserID, platform)
 	if err != nil {
-		s.log.Error("Failed to fetch user credential",
-			zap.String("platform", platform),
-			zap.String("job_id", evt.JobID),
-			zap.String("user_id", evt.UserID),
-			zap.Error(err),
-		)
+		if errors.Is(err, credentials.ErrCredentialNotFound) {
+			s.log.Warn("User has not connected platform; skipping publish",
+				zap.String("platform", platform),
+				zap.String("job_id", evt.JobID),
+				zap.String("user_id", evt.UserID),
+			)
+			pr.ErrorDetail = "platform not connected"
+		} else {
+			s.log.Error("Failed to load or decrypt user credential",
+				zap.String("platform", platform),
+				zap.String("job_id", evt.JobID),
+				zap.String("user_id", evt.UserID),
+				zap.Error(err),
+			)
+			pr.ErrorDetail = err.Error()
+		}
 		pr.Status = "failed"
-		pr.ErrorDetail = fmt.Sprintf("no credentials: %v", err)
 		return pr
 	}
 

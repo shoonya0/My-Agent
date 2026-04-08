@@ -1,4 +1,9 @@
 /config.env
 .cursor/
 *.exe
+
+# Logs
 **/logs/
+*.log
+logs/
+app.log

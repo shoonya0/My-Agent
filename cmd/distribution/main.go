@@ -71,10 +71,10 @@ func main() {
 
 	// ---- Connector registry ----
 	registry := connectors.NewRegistry()
-	registry.Register("instagram", connectors.NewInstagram(cfg.InstagramToken))
-	registry.Register("whatsapp", connectors.NewWhatsApp(cfg.WhatsAppToken))
-	registry.Register("discord", connectors.NewDiscord(cfg.DiscordWebhook))
-	registry.Register("telegram", connectors.NewTelegram(cfg.TelegramToken))
+	registry.Register("instagram", connectors.NewInstagram())
+	registry.Register("whatsapp", connectors.NewWhatsApp())
+	registry.Register("discord", connectors.NewDiscord())
+	registry.Register("telegram", connectors.NewTelegram())
 
 	log.Info("Registered platform connectors",
 		zap.Strings("platforms", registry.Platforms()),

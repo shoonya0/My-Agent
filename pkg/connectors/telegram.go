@@ -19,37 +19,33 @@ import (
 const telegramAPIBase = "https://api.telegram.org/bot"
 
 // Telegram publishes images via the Telegram Bot API sendPhoto method.
-// Requires metadata key "telegram_chat_id" on every PostRequest.
+// Requires metadata keys telegram_token and telegram_chat_id on every PostRequest.
 type Telegram struct {
-	token  string
 	client *http.Client
 }
 
-// NewTelegram creates a Telegram connector using the given bot token.
-func NewTelegram(token string) *Telegram {
+// NewTelegram creates a stateless Telegram connector.
+func NewTelegram() *Telegram {
 	return &Telegram{
-		token:  token,
 		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 func (t *Telegram) Name() string { return "telegram" }
 
-func (t *Telegram) Validate(_ context.Context) error {
-	if t.token == "" {
-		return fmt.Errorf("telegram: bot token is not configured")
-	}
-	return nil
-}
+func (t *Telegram) Validate(context.Context) error { return nil }
 
 func (t *Telegram) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "telegram.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "telegram"))
 
-	token := t.token
-	if override := req.Metadata["telegram_token"]; override != "" {
-		token = override
+	token := req.Metadata["telegram_token"]
+	if token == "" {
+		err := fmt.Errorf("telegram: metadata must include telegram_token")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	chatID := req.Metadata["telegram_chat_id"]

@@ -16,38 +16,34 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
-// Discord publishes images to a Discord channel via webhook. An optional
-// per-request override can be passed in metadata["discord_webhook_url"].
+// Discord publishes images to a Discord channel via webhook URL in
+// PostRequest.Metadata["discord_webhook_url"].
 type Discord struct {
-	webhookURL string
-	client     *http.Client
+	client *http.Client
 }
 
-// NewDiscord creates a Discord connector that posts to the given webhook URL.
-func NewDiscord(webhookURL string) *Discord {
+// NewDiscord creates a stateless Discord connector.
+func NewDiscord() *Discord {
 	return &Discord{
-		webhookURL: webhookURL,
-		client:     &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 func (d *Discord) Name() string { return "discord" }
 
-func (d *Discord) Validate(_ context.Context) error {
-	if d.webhookURL == "" {
-		return fmt.Errorf("discord: webhook URL is not configured")
-	}
-	return nil
-}
+func (d *Discord) Validate(context.Context) error { return nil }
 
 func (d *Discord) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "discord.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "discord"))
 
-	webhookURL := d.webhookURL
-	if override := req.Metadata["discord_webhook_url"]; override != "" {
-		webhookURL = override
+	webhookURL := req.Metadata["discord_webhook_url"]
+	if webhookURL == "" {
+		err := fmt.Errorf("discord: metadata must include discord_webhook_url")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	body := map[string]any{

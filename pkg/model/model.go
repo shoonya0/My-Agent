@@ -56,11 +56,6 @@ type Config struct {
 	EncryptionKey           string `mapstructure:"ENCRYPTION_KEY" required:"true"`
 	PromptAgentSystemPrompt string `mapstructure:"PROMPT_AGENT_SYSTEM_PROMPT" optional:"true"`
 
-	InstagramToken string `mapstructure:"INSTAGRAM_TOKEN" optional:"true"`
-	WhatsAppToken  string `mapstructure:"WHATSAPP_TOKEN" optional:"true"`
-	DiscordWebhook string `mapstructure:"DISCORD_WEBHOOK" optional:"true"`
-	TelegramToken  string `mapstructure:"TELEGRAM_TOKEN" optional:"true"`
-
 	// OAuth (optional; required only for HandleOAuthCallback on supported providers)
 	GoogleOAuthClientID     string `mapstructure:"GOOGLE_OAUTH_CLIENT_ID" optional:"true"`
 	GoogleOAuthClientSecret string `mapstructure:"GOOGLE_OAUTH_CLIENT_SECRET" optional:"true"`

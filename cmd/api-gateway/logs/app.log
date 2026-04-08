@@ -1,4 +1,0 @@
-{"level":"info","ts":"2026-04-06T22:52:39.816+0530","caller":"api-gateway/main.go:50","msg":"Starting api-gateway","service":"api-gateway","port":"8081","log_level":"info"}
-{"level":"info","ts":"2026-04-06T22:52:39.824+0530","caller":"redis/pool.go:24","msg":"Connected to Redis","addr":"127.0.0.1:6379"}
-{"level":"info","ts":"2026-04-06T22:52:39.826+0530","caller":"api-gateway/main.go:41","msg":"Connected to auth-service gRPC","addr":"localhost:9090"}
-{"level":"info","ts":"2026-04-06T22:52:39.828+0530","caller":"api-gateway/main.go:103","msg":"HTTP server ready","port":"8081"}

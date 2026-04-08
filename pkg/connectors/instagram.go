@@ -19,38 +19,34 @@ import (
 const instagramAPIBase = "https://graph.instagram.com/v21.0/me"
 
 // Instagram publishes images via the Instagram Graph API using a two-step
-// flow: create a media container, then publish it.
+// flow: create a media container, then publish it. Authentication is per
+// request via PostRequest.Metadata["instagram_token"].
 type Instagram struct {
-	token  string
 	client *http.Client
 }
 
-// NewInstagram creates an Instagram connector authenticated with the given
-// long-lived page access token.
-func NewInstagram(token string) *Instagram {
+// NewInstagram creates a stateless Instagram connector.
+func NewInstagram() *Instagram {
 	return &Instagram{
-		token:  token,
 		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 func (ig *Instagram) Name() string { return "instagram" }
 
-func (ig *Instagram) Validate(_ context.Context) error {
-	if ig.token == "" {
-		return fmt.Errorf("instagram: access token is not configured")
-	}
-	return nil
-}
+func (ig *Instagram) Validate(context.Context) error { return nil }
 
 func (ig *Instagram) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "instagram.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "instagram"))
 
-	token := ig.token
-	if override := req.Metadata["instagram_token"]; override != "" {
-		token = override
+	token := req.Metadata["instagram_token"]
+	if token == "" {
+		err := fmt.Errorf("instagram: metadata must include instagram_token")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	containerID, err := ig.createMediaContainer(ctx, req, token)
