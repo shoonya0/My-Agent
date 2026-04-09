@@ -2,20 +2,16 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 
-	"myAgent/internal/config"
-	"myAgent/internal/credentials"
-	"myAgent/internal/distribution"
+	"myAgent/internal/platforms/credentials"
+	"myAgent/internal/jobs/distribution"
+	"myAgent/pkg/infrastructure/bootstrap"
 	"myAgent/pkg/connectors"
 	"myAgent/pkg/crypto"
-	"myAgent/pkg/kafka"
-	"myAgent/pkg/logger"
-	"myAgent/pkg/mysql"
-	apmotel "myAgent/pkg/otel"
+	"myAgent/pkg/data/kafka"
+	"myAgent/pkg/data/mysql"
 
 	"go.uber.org/zap"
 )
@@ -27,20 +23,17 @@ const (
 )
 
 func main() {
-	cfg := config.Load()
-	log, closeLog := logger.New(cfg.LogLevel)
+	svc, err := bootstrap.InitService(serviceName)
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
-		_ = log.Sync()
-		if err := closeLog(); err != nil {
-			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		if err := svc.Shutdown(); err != nil {
+			svc.Log.Error("Shutdown error", zap.Error(err))
 		}
 	}()
 
-	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
-	if err != nil {
-		log.Fatal("Failed to initialise tracer", zap.Error(err))
-	}
-	defer shutdown()
+	cfg, log := svc.Config, svc.Log
 
 	// ---- MySQL ----
 	db, err := mysql.NewDB(context.Background(), cfg.MySQLDSN)
@@ -89,7 +82,7 @@ func main() {
 
 	// ---- Distribution service ----
 	repo := distribution.NewRepository(db)
-	svc := distribution.NewService(consumer, producer, registry, repo, credSvc, log)
+	distSvc := distribution.NewService(consumer, producer, registry, repo, credSvc, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -99,7 +92,7 @@ func main() {
 		zap.String("consumer_group", consumerGroupID),
 	)
 
-	if err := svc.Run(ctx); err != nil {
+	if err := distSvc.Run(ctx); err != nil {
 		log.Fatal("Distribution-service error", zap.Error(err))
 	}
 

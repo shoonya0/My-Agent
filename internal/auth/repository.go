@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"myAgent/pkg/dbutil"
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 )
 
 // ErrUserNotFound is returned when no user matches the query.
@@ -16,10 +16,10 @@ var ErrUserNotFound = errors.New("auth: user not found")
 
 // Repository defines the data-access contract for user records.
 type Repository interface {
-	CreateUser(ctx context.Context, user *model.User) error
-	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
-	GetUserByProviderID(ctx context.Context, provider, providerID string) (*model.User, error)
-	UpdateUser(ctx context.Context, user *model.User) error
+	CreateUser(ctx context.Context, user *types.User) error
+	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
+	GetUserByProviderID(ctx context.Context, provider, providerID string) (*types.User, error)
+	UpdateUser(ctx context.Context, user *types.User) error
 }
 
 type mysqlRepository struct {
@@ -31,7 +31,7 @@ func NewRepository(db *sql.DB) Repository {
 	return &mysqlRepository{db: db}
 }
 
-func (r *mysqlRepository) CreateUser(ctx context.Context, user *model.User) error {
+func (r *mysqlRepository) CreateUser(ctx context.Context, user *types.User) error {
 	now := time.Now()
 	user.CreatedAt = now
 	user.UpdatedAt = now
@@ -51,19 +51,19 @@ func (r *mysqlRepository) CreateUser(ctx context.Context, user *model.User) erro
 	return nil
 }
 
-func (r *mysqlRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+func (r *mysqlRepository) GetUserByEmail(ctx context.Context, email string) (*types.User, error) {
 	const q = `SELECT id, email, password_hash, display_name, avatar_url, provider, provider_id, roles, created_at, updated_at
 		FROM users WHERE email = ?`
 	return r.scanUser(ctx, q, email)
 }
 
-func (r *mysqlRepository) GetUserByProviderID(ctx context.Context, provider, providerID string) (*model.User, error) {
+func (r *mysqlRepository) GetUserByProviderID(ctx context.Context, provider, providerID string) (*types.User, error) {
 	const q = `SELECT id, email, password_hash, display_name, avatar_url, provider, provider_id, roles, created_at, updated_at
 		FROM users WHERE provider = ? AND provider_id = ?`
 	return r.scanUser(ctx, q, provider, providerID)
 }
 
-func (r *mysqlRepository) UpdateUser(ctx context.Context, user *model.User) error {
+func (r *mysqlRepository) UpdateUser(ctx context.Context, user *types.User) error {
 	user.UpdatedAt = time.Now()
 
 	const q = `
@@ -89,8 +89,8 @@ func (r *mysqlRepository) UpdateUser(ctx context.Context, user *model.User) erro
 	return nil
 }
 
-func (r *mysqlRepository) scanUser(ctx context.Context, query string, args ...any) (*model.User, error) {
-	var u model.User
+func (r *mysqlRepository) scanUser(ctx context.Context, query string, args ...any) (*types.User, error) {
+	var u types.User
 	var roles dbutil.JSONStringSlice
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(

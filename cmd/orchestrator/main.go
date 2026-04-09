@@ -2,20 +2,17 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"myAgent/internal/config"
-	"myAgent/internal/orchestrator"
-	"myAgent/pkg/grpcserver"
-	"myAgent/pkg/kafka"
+	"myAgent/internal/jobs/orchestrator"
+	"myAgent/pkg/infrastructure/bootstrap"
+	"myAgent/pkg/infrastructure/grpcserver"
+	"myAgent/pkg/data/kafka"
 	"myAgent/pkg/llm"
-	"myAgent/pkg/logger"
-	"myAgent/pkg/mysql"
-	apmotel "myAgent/pkg/otel"
-	"myAgent/pkg/redis"
+	"myAgent/pkg/data/mysql"
+	"myAgent/pkg/data/redis"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
@@ -25,26 +22,23 @@ import (
 const serviceName = "orchestrator"
 
 func main() {
-	cfg := config.Load()
-	log, closeLog := logger.New(cfg.LogLevel)
+	svc, err := bootstrap.InitService(serviceName)
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
-		_ = log.Sync()
-		if err := closeLog(); err != nil {
-			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		if err := svc.Shutdown(); err != nil {
+			svc.Log.Error("Shutdown error", zap.Error(err))
 		}
 	}()
+
+	cfg, log := svc.Config, svc.Log
 
 	log.Info("Starting orchestrator",
 		zap.String("service", serviceName),
 		zap.String("grpc_port", cfg.OrchestratorGRPCPort),
 		zap.String("log_level", cfg.LogLevel),
 	)
-
-	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
-	if err != nil {
-		log.Fatal("Failed to initialise tracer", zap.Error(err))
-	}
-	defer shutdown()
 
 	db, err := mysql.NewDB(context.Background(), cfg.MySQLDSN)
 	if err != nil {
@@ -71,8 +65,8 @@ func main() {
 	llmClient := llm.NewClient(cfg.OpenAIKey, cfg.OrchestratorModel, log)
 
 	repo := orchestrator.NewRepository(db)
-	svc := orchestrator.NewService(repo, producer, llmClient, rdb, log)
-	h := orchestrator.NewHandler(svc, log)
+	orchSvc := orchestrator.NewService(repo, producer, llmClient, rdb, log)
+	h := orchestrator.NewHandler(orchSvc, log)
 
 	grpcOpts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),

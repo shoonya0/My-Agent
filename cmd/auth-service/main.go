@@ -2,18 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"myAgent/internal/auth"
-	"myAgent/internal/config"
-	"myAgent/pkg/grpcserver"
-	"myAgent/pkg/logger"
-	"myAgent/pkg/mysql"
-	apmotel "myAgent/pkg/otel"
-	"myAgent/pkg/redis"
+	"myAgent/pkg/infrastructure/bootstrap"
+	"myAgent/pkg/infrastructure/grpcserver"
+	"myAgent/pkg/data/mysql"
+	"myAgent/pkg/data/redis"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
@@ -23,29 +20,23 @@ import (
 const serviceName = "auth-service"
 
 func main() {
-	// it loads the configuration from the environment variables
-	cfg := config.Load()
-
-	// it creates a new logger instance
-	log, closeLog := logger.New(cfg.LogLevel)
+	svc, err := bootstrap.InitService(serviceName)
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
-		_ = log.Sync()
-		if err := closeLog(); err != nil {
-			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		if err := svc.Shutdown(); err != nil {
+			svc.Log.Error("Shutdown error", zap.Error(err))
 		}
 	}()
+
+	cfg, log := svc.Config, svc.Log
 
 	log.Info("Starting auth-service",
 		zap.String("service", serviceName),
 		zap.String("grpc_port", cfg.GRPCPort),
 		zap.String("log_level", cfg.LogLevel),
 	)
-
-	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
-	if err != nil {
-		log.Fatal("Failed to initialise tracer", zap.Error(err))
-	}
-	defer shutdown()
 
 	// it connects to the Redis database
 	rdb := redis.InitRedis(cfg, log)
@@ -70,9 +61,9 @@ func main() {
 
 	// it creates a new auth service using the auth repository and the Redis database connection
 
-	svc := auth.NewService(repo, rdb, cfg, log)
+	authSvc := auth.NewService(repo, rdb, cfg, log)
 	// it creates a new auth handler using the auth service
-	h := auth.NewHandler(svc, log)
+	h := auth.NewHandler(authSvc, log)
 
 	// it starts the gRPC server using the auth handler
 	grpcSrv, err := grpcserver.Start(cfg.GRPCPort, h.GRPCRegistrar(), log,

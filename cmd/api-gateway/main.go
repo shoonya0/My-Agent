@@ -2,22 +2,18 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	"myAgent/api/approvalpb"
 	"myAgent/api/authpb"
 	"myAgent/api/orchestratorpb"
 	"myAgent/internal/apigateway"
-	"myAgent/internal/config"
-	"myAgent/internal/credentials"
+	"myAgent/internal/platforms/credentials"
+	"myAgent/pkg/infrastructure/bootstrap"
 	"myAgent/pkg/crypto"
-	"myAgent/pkg/httpserver"
-	"myAgent/pkg/logger"
-	"myAgent/pkg/model"
-	"myAgent/pkg/mysql"
-	apmotel "myAgent/pkg/otel"
-	"myAgent/pkg/redis"
+	"myAgent/pkg/infrastructure/httpserver"
+	"myAgent/pkg/types"
+	"myAgent/pkg/data/mysql"
+	"myAgent/pkg/data/redis"
 	"myAgent/pkg/storage"
 	ws "myAgent/pkg/websocket"
 
@@ -56,7 +52,7 @@ func subscribeToApprovalUpdates(ctx context.Context, client approvalpb.ApprovalS
 			}
 
 			// Convert gRPC notification to WebSocket notification and broadcast
-			wsNotification := model.WSNotification{
+			wsNotification := types.WSNotification{
 				Type:       update.NotificationType,
 				JobID:      update.JobId,
 				Status:     update.Status,
@@ -76,7 +72,7 @@ func subscribeToApprovalUpdates(ctx context.Context, client approvalpb.ApprovalS
 }
 
 // client connection is used to make gRPC calls to the auth-service
-func dialAuthService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
+func dialAuthService(cfg *types.Config, log *zap.Logger) *grpc.ClientConn {
 	// it creates a new client connection to the auth-service
 	conn, err := grpc.NewClient(
 		cfg.AuthServiceAddr,
@@ -92,7 +88,7 @@ func dialAuthService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
 	return conn
 }
 
-func dialOrchestratorService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
+func dialOrchestratorService(cfg *types.Config, log *zap.Logger) *grpc.ClientConn {
 	conn, err := grpc.NewClient(
 		cfg.OrchestratorServiceAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -105,7 +101,7 @@ func dialOrchestratorService(cfg *model.Config, log *zap.Logger) *grpc.ClientCon
 	return conn
 }
 
-func dialApprovalService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
+func dialApprovalService(cfg *types.Config, log *zap.Logger) *grpc.ClientConn {
 	conn, err := grpc.NewClient(
 		cfg.ApprovalServiceAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -119,26 +115,23 @@ func dialApprovalService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
 }
 
 func main() {
-	cfg := config.Load()
-	log, closeLog := logger.New(cfg.LogLevel)
+	svc, err := bootstrap.InitService(serviceName)
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
-		_ = log.Sync()
-		if err := closeLog(); err != nil {
-			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		if err := svc.Shutdown(); err != nil {
+			svc.Log.Error("Shutdown error", zap.Error(err))
 		}
 	}()
+
+	cfg, log := svc.Config, svc.Log
 
 	log.Info("Starting api-gateway",
 		zap.String("service", serviceName),
 		zap.String("port", cfg.APIGatewayPort),
 		zap.String("log_level", cfg.LogLevel),
 	)
-
-	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
-	if err != nil {
-		log.Fatal("Failed to initialise tracer", zap.Error(err))
-	}
-	defer shutdown()
 
 	rdb := redis.InitRedis(cfg, log)
 	defer rdb.Close()

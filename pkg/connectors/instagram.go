@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -36,7 +36,7 @@ func (ig *Instagram) Name() string { return "instagram" }
 
 func (ig *Instagram) Validate(context.Context) error { return nil }
 
-func (ig *Instagram) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
+func (ig *Instagram) Publish(ctx context.Context, req types.PostRequest) (*types.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "instagram.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "instagram"))
@@ -64,13 +64,13 @@ func (ig *Instagram) Publish(ctx context.Context, req model.PostRequest) (*model
 	}
 
 	span.SetStatus(codes.Ok, "published")
-	return &model.PublishResult{
+	return &types.PublishResult{
 		PlatformPostID: publishID,
 		PlatformURL:    fmt.Sprintf("https://www.instagram.com/p/%s", publishID),
 	}, nil
 }
 
-func (ig *Instagram) createMediaContainer(ctx context.Context, req model.PostRequest, token string) (string, error) {
+func (ig *Instagram) createMediaContainer(ctx context.Context, req types.PostRequest, token string) (string, error) {
 	payload, err := json.Marshal(map[string]string{
 		"image_url":    req.MediaURL,
 		"caption":      req.Caption,

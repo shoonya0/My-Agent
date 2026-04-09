@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -36,7 +36,7 @@ type OutputImage struct {
 // Client communicates with a ComfyUI instance over HTTP to queue workflows,
 // poll for completion, and download generated images.
 type Client interface {
-	QueuePrompt(ctx context.Context, input *model.ComfyWorkflowInput) (promptID string, err error)
+	QueuePrompt(ctx context.Context, input *types.ComfyWorkflowInput) (promptID string, err error)
 	WaitForResult(ctx context.Context, promptID string) (*GenerationResult, error)
 	DownloadImage(ctx context.Context, filename, subfolder string) ([]byte, error)
 }
@@ -63,7 +63,7 @@ type promptResponse struct {
 }
 
 // QueuePrompt submits a workflow to ComfyUI and returns the assigned prompt ID.
-func (c *comfyClient) QueuePrompt(ctx context.Context, input *model.ComfyWorkflowInput) (string, error) {
+func (c *comfyClient) QueuePrompt(ctx context.Context, input *types.ComfyWorkflowInput) (string, error) {
 	ctx, span := otel.Tracer(tracerName).Start(ctx, "comfyui.QueuePrompt")
 	defer span.End()
 

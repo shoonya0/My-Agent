@@ -4,26 +4,26 @@ import (
 	"fmt"
 	"sync"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 )
 
 // Registry holds a set of named PlatformConnectors keyed by platform name.
 // It is safe for concurrent reads; registration is expected at startup only.
 type Registry struct {
 	mu         sync.RWMutex
-	connectors map[string]model.PlatformConnector
+	connectors map[string]types.PlatformConnector
 }
 
 // NewRegistry returns an empty connector registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		connectors: make(map[string]model.PlatformConnector),
+		connectors: make(map[string]types.PlatformConnector),
 	}
 }
 
 // Register adds a connector under the given platform name. Overwrites any
 // previously registered connector for the same platform.
-func (r *Registry) Register(platform string, c model.PlatformConnector) {
+func (r *Registry) Register(platform string, c types.PlatformConnector) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.connectors[platform] = c
@@ -31,7 +31,7 @@ func (r *Registry) Register(platform string, c model.PlatformConnector) {
 
 // Get returns the connector for the given platform or an error if none is
 // registered.
-func (r *Registry) Get(platform string) (model.PlatformConnector, error) {
+func (r *Registry) Get(platform string) (types.PlatformConnector, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	c, ok := r.connectors[platform]

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -36,7 +36,7 @@ func (wa *WhatsApp) Name() string { return "whatsapp" }
 
 func (wa *WhatsApp) Validate(context.Context) error { return nil }
 
-func (wa *WhatsApp) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
+func (wa *WhatsApp) Publish(ctx context.Context, req types.PostRequest) (*types.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "whatsapp.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "whatsapp"))
@@ -112,5 +112,5 @@ func (wa *WhatsApp) Publish(ctx context.Context, req model.PostRequest) (*model.
 	}
 
 	span.SetStatus(codes.Ok, "published")
-	return &model.PublishResult{PlatformPostID: messageID}, nil
+	return &types.PublishResult{PlatformPostID: messageID}, nil
 }

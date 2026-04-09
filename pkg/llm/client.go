@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	openai "github.com/sashabaranov/go-openai"
 	"go.opentelemetry.io/otel"
@@ -19,7 +19,7 @@ const tracerName = "pkg/llm"
 // Client abstracts LLM operations used by the orchestrator to parse user
 // intent into a structured ExecutionPlan.
 type Client interface {
-	ParseIntent(ctx context.Context, prompt string) (*model.ExecutionPlan, error)
+	ParseIntent(ctx context.Context, prompt string) (*types.ExecutionPlan, error)
 }
 
 type openAIClient struct {
@@ -57,7 +57,7 @@ Rules:
 // ParseIntent sends the user's prompt to the LLM and parses the structured
 // JSON response into an ExecutionPlan. Returns an error if the LLM call fails
 // or the response cannot be deserialised.
-func (c *openAIClient) ParseIntent(ctx context.Context, prompt string) (*model.ExecutionPlan, error) {
+func (c *openAIClient) ParseIntent(ctx context.Context, prompt string) (*types.ExecutionPlan, error) {
 	ctx, span := otel.Tracer(tracerName).Start(ctx, "llm.ParseIntent")
 	defer span.End()
 
@@ -97,7 +97,7 @@ func (c *openAIClient) ParseIntent(ctx context.Context, prompt string) (*model.E
 		zap.Int("response_len", len(raw)),
 	)
 
-	var plan model.ExecutionPlan
+	var plan types.ExecutionPlan
 	if err := json.Unmarshal([]byte(raw), &plan); err != nil {
 		return nil, fmt.Errorf("llm: unmarshal execution plan: %w", err)
 	}

@@ -2,17 +2,13 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 
-	"myAgent/internal/config"
-	"myAgent/internal/promptagent"
-	"myAgent/pkg/kafka"
+	"myAgent/internal/workers/promptagent"
+	"myAgent/pkg/infrastructure/bootstrap"
+	"myAgent/pkg/data/kafka"
 	"myAgent/pkg/llm"
-	"myAgent/pkg/logger"
-	apmotel "myAgent/pkg/otel"
 
 	"go.uber.org/zap"
 )
@@ -24,20 +20,17 @@ const (
 )
 
 func main() {
-	cfg := config.Load()
-	log, closeLog := logger.New(cfg.LogLevel)
+	svc, err := bootstrap.InitService(serviceName)
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
-		_ = log.Sync()
-		if err := closeLog(); err != nil {
-			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		if err := svc.Shutdown(); err != nil {
+			svc.Log.Error("Shutdown error", zap.Error(err))
 		}
 	}()
 
-	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
-	if err != nil {
-		log.Fatal("Failed to initialise tracer", zap.Error(err))
-	}
-	defer shutdown()
+	cfg, log := svc.Config, svc.Log
 
 	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, consumerGroupID, topicPromptRefineRequested, log)
 	if err != nil {

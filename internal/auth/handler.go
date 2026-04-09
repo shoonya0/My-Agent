@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"myAgent/api/authpb"
-	"myAgent/pkg/grpcserver"
-	"myAgent/pkg/model"
+	"myAgent/pkg/infrastructure/grpcserver"
+	"myAgent/pkg/types"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -127,7 +127,7 @@ func (h *Handler) HandleOAuthCallback(ctx context.Context, req *authpb.OAuthCall
 // Proto ↔ model converters (gRPC boundary only)
 // ---------------------------------------------------------------------------
 
-func claimsToProto(c *model.Claims) *authpb.ValidateTokenResponse {
+func claimsToProto(c *types.Claims) *authpb.ValidateTokenResponse {
 	return &authpb.ValidateTokenResponse{
 		UserId:    c.UserID,
 		Roles:     c.Roles,
@@ -135,7 +135,7 @@ func claimsToProto(c *model.Claims) *authpb.ValidateTokenResponse {
 	}
 }
 
-func tokenResponseToProto(r *model.TokenResponse) *authpb.TokenResponse {
+func tokenResponseToProto(r *types.TokenResponse) *authpb.TokenResponse {
 	return &authpb.TokenResponse{
 		AccessToken:  r.AccessToken,
 		RefreshToken: r.RefreshToken,

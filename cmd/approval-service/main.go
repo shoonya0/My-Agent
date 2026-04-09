@@ -2,20 +2,16 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"myAgent/internal/approval"
-	"myAgent/internal/config"
-	"myAgent/pkg/grpcserver"
-	"myAgent/pkg/kafka"
-	"myAgent/pkg/logger"
-	apmotel "myAgent/pkg/otel"
+	"myAgent/internal/jobs/approval"
+	"myAgent/pkg/infrastructure/bootstrap"
+	"myAgent/pkg/infrastructure/grpcserver"
+	"myAgent/pkg/data/kafka"
+	"myAgent/pkg/data/redis"
 	"myAgent/pkg/storage"
-
-	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -28,33 +24,21 @@ const (
 )
 
 func main() {
-	cfg := config.Load()
-	log, closeLog := logger.New(cfg.LogLevel)
+	svc, err := bootstrap.InitService(serviceName)
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
-		_ = log.Sync()
-		if err := closeLog(); err != nil {
-			fmt.Fprintf(os.Stderr, "logger: close log file: %v\n", err)
+		if err := svc.Shutdown(); err != nil {
+			svc.Log.Error("Shutdown error", zap.Error(err))
 		}
 	}()
 
-	shutdown, err := apmotel.InitTracer(context.Background(), serviceName, cfg.JaegerEndpoint)
-	if err != nil {
-		log.Fatal("Failed to initialise tracer", zap.Error(err))
-	}
-	defer shutdown()
+	cfg, log := svc.Config, svc.Log
 
 	// ---- Redis ----
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
+	rdb := redis.InitRedis(cfg, log)
 	defer rdb.Close()
-
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Fatal("Redis connection failed", zap.Error(err))
-	}
-	log.Info("Connected to Redis", zap.String("addr", cfg.RedisAddr))
 
 	// ---- Kafka ----
 	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, consumerGroupID, topicImageGenerated, log)
@@ -84,7 +68,7 @@ func main() {
 	streamManager := approval.NewStreamManager(log)
 
 	// ---- Approval service ----
-	svc := approval.NewService(
+	approvalSvc := approval.NewService(
 		consumer, streamManager, rdb,
 		presigner, cfg.AWSBucket, cfg.AWSEndpoint,
 		log,
@@ -110,7 +94,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		if err := svc.ListenAndNotify(ctx); err != nil {
+		if err := approvalSvc.ListenAndNotify(ctx); err != nil {
 			log.Error("Consumer loop error", zap.Error(err))
 		}
 	}()

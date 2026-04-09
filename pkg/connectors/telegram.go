@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -35,7 +35,7 @@ func (t *Telegram) Name() string { return "telegram" }
 
 func (t *Telegram) Validate(context.Context) error { return nil }
 
-func (t *Telegram) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
+func (t *Telegram) Publish(ctx context.Context, req types.PostRequest) (*types.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "telegram.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "telegram"))
@@ -101,7 +101,7 @@ func (t *Telegram) Publish(ctx context.Context, req model.PostRequest) (*model.P
 	}
 
 	span.SetStatus(codes.Ok, "published")
-	return &model.PublishResult{
+	return &types.PublishResult{
 		PlatformPostID: fmt.Sprintf("%d", result.Result.MessageID),
 	}, nil
 }

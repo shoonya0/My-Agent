@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -33,7 +33,7 @@ func (d *Discord) Name() string { return "discord" }
 
 func (d *Discord) Validate(context.Context) error { return nil }
 
-func (d *Discord) Publish(ctx context.Context, req model.PostRequest) (*model.PublishResult, error) {
+func (d *Discord) Publish(ctx context.Context, req types.PostRequest) (*types.PublishResult, error) {
 	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "discord.Publish")
 	defer span.End()
 	span.SetAttributes(attribute.String("platform", "discord"))
@@ -94,7 +94,7 @@ func (d *Discord) Publish(ctx context.Context, req model.PostRequest) (*model.Pu
 	}
 
 	span.SetStatus(codes.Ok, "published")
-	return &model.PublishResult{
+	return &types.PublishResult{
 		PlatformPostID: result.ID,
 		PlatformURL:    fmt.Sprintf("https://discord.com/channels/@me/%s/%s", result.ChannelID, result.ID),
 	}, nil

@@ -2,7 +2,7 @@ package config
 
 import (
 	"log"
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 	"os"
 	"strings"
 
@@ -10,10 +10,10 @@ import (
 )
 
 // Load reads configuration from a file and/or environment variables and
-// returns a validated *model.Config. Set CONFIG_PATH to override the file
+// returns a validated *types.Config. Set CONFIG_PATH to override the file
 // search. Environment variables always take precedence over file values.
-func Load() *model.Config {
-	cfg := &model.Config{}
+func Load() *types.Config {
+	cfg := &types.Config{}
 
 	if path := os.Getenv("CONFIG_PATH"); path != "" {
 		viper.SetConfigFile(path)
@@ -41,7 +41,7 @@ func Load() *model.Config {
 
 // validateRequired panics at startup with a clear message when any required
 // config value is missing — fail-fast rather than silent runtime errors.
-func validateRequired(cfg *model.Config) {
+func validateRequired(cfg *types.Config) {
 	required := map[string]string{
 		"MYSQL_DSN":        cfg.MySQLDSN,
 		"REDIS_ADDR":       cfg.RedisAddr,

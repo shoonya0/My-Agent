@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
@@ -69,11 +69,11 @@ var githubEndpoint = oauth2.Endpoint{
 
 // Service defines the business logic for authentication and authorization.
 type Service interface {
-	Register(ctx context.Context, req RegisterRequest) (*model.TokenResponse, error)
-	Login(ctx context.Context, req LoginRequest) (*model.TokenResponse, error)
-	ValidateToken(ctx context.Context, token string) (*model.Claims, error)
+	Register(ctx context.Context, req RegisterRequest) (*types.TokenResponse, error)
+	Login(ctx context.Context, req LoginRequest) (*types.TokenResponse, error)
+	ValidateToken(ctx context.Context, token string) (*types.Claims, error)
 	RevokeToken(ctx context.Context, token string) error
-	HandleOAuthCallback(ctx context.Context, req OAuthCallbackParams) (*model.TokenResponse, error)
+	HandleOAuthCallback(ctx context.Context, req OAuthCallbackParams) (*types.TokenResponse, error)
 }
 
 // OAuthCallbackParams is the domain input for completing an OAuth2 authorization code callback.
@@ -100,12 +100,12 @@ type authService struct {
 	repo      Repository
 	rdb       *redis.Client
 	jwtSecret []byte
-	cfg       *model.Config
+	cfg       *types.Config
 	log       *zap.Logger
 }
 
 // NewService constructs an auth Service with the required dependencies.
-func NewService(repo Repository, rdb *redis.Client, cfg *model.Config, log *zap.Logger) Service {
+func NewService(repo Repository, rdb *redis.Client, cfg *types.Config, log *zap.Logger) Service {
 	return &authService{
 		repo:      repo,
 		rdb:       rdb,
@@ -115,7 +115,7 @@ func NewService(repo Repository, rdb *redis.Client, cfg *model.Config, log *zap.
 	}
 }
 
-// jwtClaims mirrors middleware.CustomClaims — identical JSON tags ensure tokens
+// jwtClaims mirrors auth.CustomClaims — identical JSON tags ensure tokens
 // issued here are accepted by the api-gateway's JWT middleware.
 type jwtClaims struct {
 	UserID string   `json:"user_id"`
@@ -124,7 +124,7 @@ type jwtClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (s *authService) Register(ctx context.Context, req RegisterRequest) (*model.TokenResponse, error) {
+func (s *authService) Register(ctx context.Context, req RegisterRequest) (*types.TokenResponse, error) {
 	existing, err := s.repo.GetUserByEmail(ctx, req.Email)
 	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return nil, fmt.Errorf("auth: check existing user: %w", err)
@@ -138,7 +138,7 @@ func (s *authService) Register(ctx context.Context, req RegisterRequest) (*model
 		return nil, fmt.Errorf("auth: hash password: %w", err)
 	}
 
-	user := &model.User{
+	user := &types.User{
 		ID:           uuid.NewString(),
 		Email:        req.Email,
 		PasswordHash: string(hash),
@@ -154,7 +154,7 @@ func (s *authService) Register(ctx context.Context, req RegisterRequest) (*model
 	return s.issueTokenPair(user)
 }
 
-func (s *authService) Login(ctx context.Context, req LoginRequest) (*model.TokenResponse, error) {
+func (s *authService) Login(ctx context.Context, req LoginRequest) (*types.TokenResponse, error) {
 	user, err := s.repo.GetUserByEmail(ctx, req.Email)
 	if errors.Is(err, ErrUserNotFound) {
 		return nil, ErrInvalidCredentials
@@ -171,7 +171,7 @@ func (s *authService) Login(ctx context.Context, req LoginRequest) (*model.Token
 	return s.issueTokenPair(user)
 }
 
-func (s *authService) ValidateToken(ctx context.Context, tokenStr string) (*model.Claims, error) {
+func (s *authService) ValidateToken(ctx context.Context, tokenStr string) (*types.Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &jwtClaims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -201,7 +201,7 @@ func (s *authService) ValidateToken(ctx context.Context, tokenStr string) (*mode
 		expiresAt = claims.ExpiresAt.Unix()
 	}
 
-	return &model.Claims{
+	return &types.Claims{
 		UserID:    claims.UserID,
 		Roles:     claims.Roles,
 		ExpiresAt: expiresAt,
@@ -242,7 +242,7 @@ func (s *authService) RevokeToken(ctx context.Context, tokenStr string) error {
 	return nil
 }
 
-func (s *authService) HandleOAuthCallback(ctx context.Context, req OAuthCallbackParams) (*model.TokenResponse, error) {
+func (s *authService) HandleOAuthCallback(ctx context.Context, req OAuthCallbackParams) (*types.TokenResponse, error) {
 	ctx, span := otel.Tracer(tracerName).Start(ctx, "auth.HandleOAuthCallback")
 	defer span.End()
 
@@ -320,7 +320,7 @@ func (s *authService) HandleOAuthCallback(ctx context.Context, req OAuthCallback
 		return nil, fmt.Errorf("%w: provider did not return an email", ErrOAuthProfileFailed)
 	}
 
-	newUser := &model.User{
+	newUser := &types.User{
 		ID:          uuid.NewString(),
 		Email:       prof.Email,
 		DisplayName: prof.DisplayName,
@@ -516,7 +516,7 @@ func (s *authService) fetchGitHubPrimaryEmail(ctx context.Context, client *http.
 	return "", fmt.Errorf("%w: no verified email", ErrOAuthProfileFailed)
 }
 
-func (s *authService) issueTokenPair(user *model.User) (*model.TokenResponse, error) {
+func (s *authService) issueTokenPair(user *types.User) (*types.TokenResponse, error) {
 	now := time.Now()
 
 	accessClaims := jwtClaims{
@@ -548,7 +548,7 @@ func (s *authService) issueTokenPair(user *model.User) (*model.TokenResponse, er
 		return nil, fmt.Errorf("auth: sign refresh token: %w", err)
 	}
 
-	return &model.TokenResponse{
+	return &types.TokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    int(accessTokenTTL.Seconds()),

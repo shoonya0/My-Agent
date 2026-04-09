@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"myAgent/pkg/model"
+	"myAgent/pkg/types"
 
 	openai "github.com/sashabaranov/go-openai"
 	"go.opentelemetry.io/otel"
@@ -17,13 +17,13 @@ import (
 // PromptRefiner rewrites a user's raw prompt into a detailed, ComfyUI-ready
 // prompt and extracts structured style parameters via an LLM call.
 type PromptRefiner interface {
-	RefinePrompt(ctx context.Context, original string, plan model.ExecutionPlan) (*RefinedOutput, error)
+	RefinePrompt(ctx context.Context, original string, plan types.ExecutionPlan) (*RefinedOutput, error)
 }
 
 // RefinedOutput holds the LLM's structured response for prompt refinement.
 type RefinedOutput struct {
 	Prompt      string           `json:"prompt"`
-	StyleParams model.StyleParams `json:"style_params"`
+	StyleParams types.StyleParams `json:"style_params"`
 }
 
 type openAIRefiner struct {
@@ -71,7 +71,7 @@ func NewRefiner(apiKey, modelName, systemPrompt string, log *zap.Logger) PromptR
 
 // RefinePrompt sends the original prompt and execution plan to the LLM and
 // returns a refined prompt with extracted style parameters.
-func (r *openAIRefiner) RefinePrompt(ctx context.Context, original string, plan model.ExecutionPlan) (*RefinedOutput, error) {
+func (r *openAIRefiner) RefinePrompt(ctx context.Context, original string, plan types.ExecutionPlan) (*RefinedOutput, error) {
 	ctx, span := otel.Tracer(tracerName).Start(ctx, "llm.RefinePrompt")
 	defer span.End()
 
