@@ -9,15 +9,16 @@ import (
 
 	"myAgent/internal/approval"
 	"myAgent/internal/config"
-	"myAgent/pkg/httpserver"
+	"myAgent/pkg/grpcserver"
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/logger"
 	apmotel "myAgent/pkg/otel"
 	"myAgent/pkg/storage"
-	ws "myAgent/pkg/websocket"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -62,12 +63,6 @@ func main() {
 	}
 	defer consumer.Close()
 
-	producer, err := kafka.NewProducer(cfg.KafkaBrokers, log)
-	if err != nil {
-		log.Fatal("Failed to create Kafka producer", zap.Error(err))
-	}
-	defer producer.Close()
-
 	// ---- S3 presigner (best-effort; nil disables presigning) ----
 	presigner, err := storage.NewS3Presigner(
 		context.Background(),
@@ -85,53 +80,53 @@ func main() {
 		presigner = nil
 	}
 
-	// ---- WebSocket hub ----
-	hub := ws.NewHub(log)
-	go hub.Run()
+	// ---- Stream manager for gRPC streaming ----
+	streamManager := approval.NewStreamManager(log)
 
-	// ---- Approval service + handler ----
+	// ---- Approval service ----
 	svc := approval.NewService(
-		consumer, producer, hub, rdb,
+		consumer, streamManager, rdb,
 		presigner, cfg.AWSBucket, cfg.AWSEndpoint,
 		log,
 	)
-	h := approval.NewHandler(svc, hub, cfg.JWTSecret, rdb, log)
+
+	// ---- gRPC handler ----
+	grpcHandler := approval.NewGRPCHandler(streamManager, log)
+
+	// ---- Start gRPC server ----
+	grpcOpts := []grpc.ServerOption{
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(grpcserver.UnaryLoggingInterceptor(log)),
+	}
+
+	grpcSrv, err := grpcserver.Start(cfg.ApprovalGRPCPort, grpcHandler.GRPCRegistrar(), log, grpcOpts...)
+	if err != nil {
+		log.Fatal("Failed to start gRPC server", zap.Error(err))
+	}
+	defer grpcSrv.GracefulStop()
 
 	// ---- Start consumer in background ----
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	consumerErr := make(chan error, 1)
 	go func() {
 		if err := svc.ListenAndNotify(ctx); err != nil {
 			log.Error("Consumer loop error", zap.Error(err))
-			consumerErr <- err
 		}
 	}()
 
-	log.Info("Starting approval-service",
-		zap.String("port", cfg.ApprovalServicePort),
+	log.Info("approval-service ready (gRPC + Kafka consumer)",
+		zap.String("grpc_port", cfg.ApprovalGRPCPort),
 		zap.String("topic", topicImageGenerated),
 		zap.String("consumer_group", consumerGroupID),
 	)
 
-	// ---- Start HTTP server in background and monitor consumer ----
-	serverErr := make(chan error, 1)
-	go func() {
-		if err := httpserver.Start(":"+cfg.ApprovalServicePort, h.Routes()); err != nil {
-			serverErr <- err
-		}
-	}()
-
-	// Fail fast if either consumer or HTTP server encounters an error
-	select {
-	case err := <-consumerErr:
-		log.Fatal("Consumer failed, shutting down", zap.Error(err))
-	case err := <-serverErr:
-		log.Fatal("HTTP server error", zap.Error(err))
-	case <-ctx.Done():
-		log.Info("Shutdown signal received")
-	}
+	// Block until shutdown signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Info("Shutdown signal received, stopping gRPC server and consumer")
+	stop()
 
 	log.Info("Approval-service shut down gracefully")
 }

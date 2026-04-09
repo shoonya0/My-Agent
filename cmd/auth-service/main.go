@@ -4,18 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"myAgent/internal/auth"
 	"myAgent/internal/config"
 	"myAgent/pkg/grpcserver"
-	"myAgent/pkg/httpserver"
 	"myAgent/pkg/logger"
 	"myAgent/pkg/mysql"
 	apmotel "myAgent/pkg/otel"
 	"myAgent/pkg/redis"
 
-	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -38,7 +37,6 @@ func main() {
 
 	log.Info("Starting auth-service",
 		zap.String("service", serviceName),
-		zap.String("http_port", cfg.AuthServicePort),
 		zap.String("grpc_port", cfg.GRPCPort),
 		zap.String("log_level", cfg.LogLevel),
 	)
@@ -59,6 +57,13 @@ func main() {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}
 	defer db.Close()
+	log.Info("Connected to MySQL")
+
+	// Auto-migrate database tables
+	if err := mysql.AutoMigrate(context.Background(), db); err != nil {
+		log.Fatal("Failed to auto-migrate database", zap.Error(err))
+	}
+	log.Info("Database tables initialized successfully")
 
 	// it creates a new auth repository using the MySQL database connection
 	repo := auth.NewRepository(db)
@@ -72,19 +77,18 @@ func main() {
 	// it starts the gRPC server using the auth handler
 	grpcSrv, err := grpcserver.Start(cfg.GRPCPort, h.GRPCRegistrar(), log,
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(grpcserver.UnaryLoggingInterceptor(log)),
 	)
 	if err != nil {
 		log.Fatal("Failed to start gRPC server", zap.Error(err))
 	}
 	defer grpcSrv.GracefulStop()
 
-	r := gin.Default()
-	r.SetTrustedProxies([]string{"127.0.0.1"})
-	r.Use(otelgin.Middleware(serviceName))
-	h.RegisterRoutes(r)
+	log.Info("auth-service ready (gRPC only)", zap.String("grpc_port", cfg.GRPCPort))
 
-	log.Info("HTTP server ready", zap.String("port", cfg.AuthServicePort))
-	if err := httpserver.Start(":"+cfg.AuthServicePort, r); err != nil {
-		log.Fatal("HTTP server error", zap.Error(err))
-	}
+	// Block until shutdown signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Info("Shutdown signal received, stopping gRPC server")
 }

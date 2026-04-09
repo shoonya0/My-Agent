@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"myAgent/api/approvalpb"
 	"myAgent/pkg/kafka"
 	"myAgent/pkg/model"
-	apmotel "myAgent/pkg/otel"
 	"myAgent/pkg/storage"
-	ws "myAgent/pkg/websocket"
 
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
@@ -19,50 +18,42 @@ import (
 )
 
 const (
-	tracerName     = "internal/approval"
-	topicApproved  = "image.approved"
-	topicJobFailed = "job.failed"
-	serviceName    = "approval-service"
+	tracerName = "internal/approval"
 
 	previewKeyPrefix = "job:preview:"
-	sessionKeyPrefix = "ws:session:"
 	previewTTL       = 1 * time.Hour
-	sessionTTL       = 30 * time.Minute
 )
 
-// Service bridges Kafka image.generated events to WebSocket notifications
-// and handles approve/reject user actions.
+// Service bridges Kafka image.generated events to gRPC stream notifications
+// (approve/reject flows through api-gateway → orchestrator).
 type Service struct {
-	consumer  kafka.Consumer
-	producer  kafka.Producer
-	hub       *ws.Hub
-	rdb       *redis.Client
-	presigner storage.Presigner
-	bucket    string
-	endpoint  string
-	log       *zap.Logger
+	consumer      kafka.Consumer
+	streamManager *StreamManager
+	rdb           *redis.Client
+	presigner     storage.Presigner
+	bucket        string
+	endpoint      string
+	log           *zap.Logger
 }
 
 // NewService constructs a Service with the required dependencies. presigner
 // may be nil — in that case the raw object URL is used for previews.
 func NewService(
 	consumer kafka.Consumer,
-	producer kafka.Producer,
-	hub *ws.Hub,
+	streamManager *StreamManager,
 	rdb *redis.Client,
 	presigner storage.Presigner,
 	bucket, endpoint string,
 	log *zap.Logger,
 ) *Service {
 	return &Service{
-		consumer:  consumer,
-		producer:  producer,
-		hub:       hub,
-		rdb:       rdb,
-		presigner: presigner,
-		bucket:    bucket,
-		endpoint:  endpoint,
-		log:       log,
+		consumer:      consumer,
+		streamManager: streamManager,
+		rdb:           rdb,
+		presigner:     presigner,
+		bucket:        bucket,
+		endpoint:      endpoint,
+		log:           log,
 	}
 }
 
@@ -133,20 +124,16 @@ func (s *Service) handleImageGenerated(ctx context.Context, msg *kafka.Message) 
 		return fmt.Errorf("cache preview: %w", err)
 	}
 
-	notification := model.WSNotification{
-		Type:       "preview_ready",
-		JobID:      event.JobID,
-		Status:     model.JobStatusAwaitingApproval,
-		PreviewURL: previewURL,
-		Message:    "Image generated. Please review and approve or reject.",
+	notification := &approvalpb.JobUpdateNotification{
+		JobId:            event.JobID,
+		UserId:           event.UserID,
+		Status:           model.JobStatusAwaitingApproval,
+		Message:          "Image generated. Please review and approve or reject.",
+		PreviewUrl:       previewURL,
+		NotificationType: "preview_ready",
 	}
 
-	if err := s.hub.SendToJob(event.JobID, notification); err != nil {
-		s.log.Error("Failed to send WebSocket notification",
-			zap.Error(err),
-			zap.String("job_id", event.JobID),
-		)
-	}
+	s.streamManager.Broadcast(notification)
 
 	s.log.Info("Preview cached and client notified",
 		zap.String("job_id", event.JobID),
@@ -154,168 +141,4 @@ func (s *Service) handleImageGenerated(ctx context.Context, msg *kafka.Message) 
 	)
 
 	return nil
-}
-
-// Approve retrieves the cached preview and publishes an ImageApprovedEvent
-// to the image.approved topic, triggering the distribution pipeline.
-func (s *Service) Approve(ctx context.Context, jobID, userID string, req model.ApproveJobRequest) (*model.JobActionResponse, error) {
-	ctx, span := otel.Tracer(tracerName).Start(ctx, "approval.Approve")
-	defer span.End()
-	span.SetAttributes(
-		attribute.String("job.id", jobID),
-		attribute.String("user.id", userID),
-	)
-
-	preview, err := s.getPreview(ctx, jobID)
-	if err != nil {
-		return nil, fmt.Errorf("get preview for job %s: %w", jobID, err)
-	}
-
-	if preview.UserID != userID {
-		s.log.Warn("Job ownership verification failed",
-			zap.String("job_id", jobID),
-			zap.String("expected_user", preview.UserID),
-			zap.String("actual_user", userID),
-		)
-		return nil, fmt.Errorf("access denied: job %s does not belong to user %s", jobID, userID)
-	}
-
-	event := model.ImageApprovedEvent{
-		JobID:     jobID,
-		UserID:    userID,
-		ImageURL:  preview.ImageURL,
-		Caption:   req.Caption,
-		Platforms: req.Platforms,
-		TraceCtx:  apmotel.ExtractTraceContext(ctx),
-	}
-
-	if err := s.producer.Publish(ctx, topicApproved, jobID, event); err != nil {
-		s.log.Error("Failed to publish image.approved",
-			zap.Error(err),
-			zap.String("job_id", jobID),
-		)
-		return nil, fmt.Errorf("publish image.approved: %w", err)
-	}
-
-	notification := model.WSNotification{
-		Type:    "job_update",
-		JobID:   jobID,
-		Status:  model.JobStatusDistributing,
-		Message: "Image approved. Distribution started.",
-	}
-	_ = s.hub.SendToJob(jobID, notification)
-
-	s.log.Info("Job approved",
-		zap.String("job_id", jobID),
-		zap.String("user_id", userID),
-		zap.Strings("platforms", req.Platforms),
-	)
-
-	return &model.JobActionResponse{
-		JobID:   jobID,
-		Status:  model.JobStatusDistributing,
-		Message: "Image approved and distribution started.",
-	}, nil
-}
-
-// Reject marks the job as rejected, publishes a job.failed event, cleans up
-// the cached preview, and notifies the client via WebSocket.
-func (s *Service) Reject(ctx context.Context, jobID, userID string, req model.RejectJobRequest) (*model.JobActionResponse, error) {
-	ctx, span := otel.Tracer(tracerName).Start(ctx, "approval.Reject")
-	defer span.End()
-	span.SetAttributes(
-		attribute.String("job.id", jobID),
-		attribute.String("user.id", userID),
-	)
-
-	reason := req.Reason
-	if reason == "" {
-		reason = "rejected by user"
-	}
-
-	s.publishFailure(ctx, jobID, userID, reason)
-
-	notification := model.WSNotification{
-		Type:    "job_update",
-		JobID:   jobID,
-		Status:  model.JobStatusRejected,
-		Message: "Image rejected.",
-	}
-	_ = s.hub.SendToJob(jobID, notification)
-
-	if err := s.rdb.Del(ctx, previewKeyPrefix+jobID).Err(); err != nil {
-		s.log.Warn("Failed to delete preview cache",
-			zap.Error(err),
-			zap.String("job_id", jobID),
-		)
-	}
-
-	s.log.Info("Job rejected",
-		zap.String("job_id", jobID),
-		zap.String("user_id", userID),
-		zap.String("reason", reason),
-	)
-
-	return &model.JobActionResponse{
-		JobID:   jobID,
-		Status:  model.JobStatusRejected,
-		Message: "Image rejected.",
-	}, nil
-}
-
-// RegisterWSSession stores a WebSocket session entry in Redis so that other
-// nodes can locate the WebSocket handler for a given job.
-func (s *Service) RegisterWSSession(ctx context.Context, jobID, userID, nodeID string) error {
-	entry := model.WSSessionEntry{
-		NodeID:      nodeID,
-		UserID:      userID,
-		ConnectedAt: time.Now(),
-	}
-
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return fmt.Errorf("marshal ws session: %w", err)
-	}
-
-	return s.rdb.Set(ctx, sessionKeyPrefix+jobID, data, sessionTTL).Err()
-}
-
-// RemoveWSSession deletes the WebSocket session entry from Redis.
-func (s *Service) RemoveWSSession(ctx context.Context, jobID string) {
-	if err := s.rdb.Del(ctx, sessionKeyPrefix+jobID).Err(); err != nil {
-		s.log.Warn("Failed to remove WS session",
-			zap.Error(err),
-			zap.String("job_id", jobID),
-		)
-	}
-}
-
-func (s *Service) getPreview(ctx context.Context, jobID string) (*model.JobPreviewCache, error) {
-	data, err := s.rdb.Get(ctx, previewKeyPrefix+jobID).Bytes()
-	if err != nil {
-		return nil, fmt.Errorf("redis get preview: %w", err)
-	}
-
-	var preview model.JobPreviewCache
-	if err := json.Unmarshal(data, &preview); err != nil {
-		return nil, fmt.Errorf("unmarshal preview: %w", err)
-	}
-
-	return &preview, nil
-}
-
-func (s *Service) publishFailure(ctx context.Context, jobID, userID, errMsg string) {
-	evt := model.JobFailedEvent{
-		JobID:        jobID,
-		UserID:       userID,
-		FailedAt:     serviceName,
-		ErrorMessage: errMsg,
-		TraceCtx:     apmotel.ExtractTraceContext(ctx),
-	}
-	if err := s.producer.Publish(ctx, topicJobFailed, jobID, evt); err != nil {
-		s.log.Error("Failed to publish job.failed event",
-			zap.Error(err),
-			zap.String("job_id", jobID),
-		)
-	}
 }

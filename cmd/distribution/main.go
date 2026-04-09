@@ -48,6 +48,13 @@ func main() {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}
 	defer db.Close()
+	log.Info("Connected to MySQL")
+
+	// Auto-migrate database tables
+	if err := mysql.AutoMigrate(context.Background(), db); err != nil {
+		log.Fatal("Failed to auto-migrate database", zap.Error(err))
+	}
+	log.Info("Database tables initialized successfully")
 
 	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
 	if err != nil {

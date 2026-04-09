@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package approval.v1;
+
+option go_package = "myAgent/api/approvalpb";
+
+// ApprovalService provides gRPC streaming for job status updates.
+// The api-gateway subscribes to receive real-time notifications that it
+// forwards to WebSocket clients.
+service ApprovalService {
+  // SubscribeJobUpdates opens a server-side stream that pushes job status
+  // updates to the connected api-gateway instance. The stream remains open
+  // and sends notifications as jobs progress through the pipeline.
+  rpc SubscribeJobUpdates(SubscribeRequest) returns (stream JobUpdateNotification);
+}
+
+// SubscribeRequest initiates a subscription stream.
+message SubscribeRequest {
+  // node_id uniquely identifies the api-gateway instance requesting the stream.
+  // Used for logging and connection tracking.
+  string node_id = 1;
+}
+
+// JobUpdateNotification carries real-time job status information pushed
+// from approval-service to api-gateway, which then forwards it to WebSocket clients.
+message JobUpdateNotification {
+  // job_id identifies the job being updated
+  string job_id = 1;
+  
+  // user_id identifies the job owner (for authorization checks)
+  string user_id = 2;
+  
+  // status reflects the current job state (e.g., "refining", "awaiting_approval", "distributing")
+  string status = 3;
+  
+  // message provides human-readable status information
+  string message = 4;
+  
+  // preview_url contains the signed S3 URL for the generated image (when type=preview_ready)
+  string preview_url = 5;
+  
+  // notification_type indicates the nature of this update:
+  // - "job_update": General status change
+  // - "preview_ready": Image generation complete, preview available
+  // - "error": Job encountered an error
+  string notification_type = 6;
+  
+  // error contains error details when notification_type="error"
+  string error = 7;
+}

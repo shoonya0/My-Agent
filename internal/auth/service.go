@@ -151,7 +151,6 @@ func (s *authService) Register(ctx context.Context, req RegisterRequest) (*model
 		return nil, fmt.Errorf("auth: create user: %w", err)
 	}
 
-	s.log.Info("User registered", zap.String("user_id", user.ID), zap.String("email", user.Email))
 	return s.issueTokenPair(user)
 }
 

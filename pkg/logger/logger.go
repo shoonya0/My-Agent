@@ -39,6 +39,7 @@ func New(level string) (*zap.Logger, func() error) {
 	encCfg.TimeKey = "ts"
 	encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
 	encCfg.EncodeLevel = zapcore.LowercaseLevelEncoder
+	encCfg.EncodeCaller = zapcore.FullCallerEncoder
 
 	jsonEncoder := zapcore.NewJSONEncoder(encCfg)
 	consoleEncoder := zapcore.NewConsoleEncoder(encCfg)

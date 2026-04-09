@@ -1,5 +1,7 @@
-{"level":"info","ts":"2026-04-06T22:58:57.555+0530","caller":"auth-service/main.go:31","msg":"Starting auth-service","service":"auth-service","http_port":"8082","grpc_port":"9090","log_level":"info"}
-{"level":"info","ts":"2026-04-06T22:58:57.561+0530","caller":"redis/pool.go:24","msg":"Connected to Redis","addr":"127.0.0.1:6379"}
-{"level":"info","ts":"2026-04-06T22:58:57.564+0530","caller":"grpcserver/server.go:39","msg":"gRPC listening","addr":":9090"}
-{"level":"info","ts":"2026-04-06T22:58:57.564+0530","caller":"auth-service/main.go:76","msg":"HTTP server ready","port":"8082"}
-{"level":"error","ts":"2026-04-06T22:59:02.089+0530","caller":"auth/handler.go:65","msg":"Register gRPC failed","error":"auth: check existing user: auth: scan user: Error 1146 (42S02): Table 'myagent.users' doesn't exist","stacktrace":"myAgent/internal/auth.(*Handler).Register\n\tD:/code/MyAgent/internal/auth/handler.go:65\nmyAgent/api/authpb._AuthService_Register_Handler\n\tD:/code/MyAgent/api/authpb/auth_grpc.pb.go:136\ngoogle.golang.org/grpc.(*Server).processUnaryRPC\n\tC:/Users/krish/go/pkg/mod/google.golang.org/grpc@v1.79.2/server.go:1426\ngoogle.golang.org/grpc.(*Server).handleStream\n\tC:/Users/krish/go/pkg/mod/google.golang.org/grpc@v1.79.2/server.go:1830\ngoogle.golang.org/grpc.(*Server).serveStreams.func2.1\n\tC:/Users/krish/go/pkg/mod/google.golang.org/grpc@v1.79.2/server.go:1061"}
+{"level":"info","ts":"2026-04-09T20:43:05.679+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:38","msg":"Starting auth-service","service":"auth-service","grpc_port":"9090","log_level":"info"}
+{"level":"info","ts":"2026-04-09T20:43:05.693+0530","caller":"D:/code/MyAgent/pkg/redis/pool.go:24","msg":"Connected to Redis","addr":"localhost:6379"}
+{"level":"info","ts":"2026-04-09T20:43:05.695+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:60","msg":"Connected to MySQL"}
+{"level":"info","ts":"2026-04-09T20:43:05.700+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:66","msg":"Database tables initialized successfully"}
+{"level":"info","ts":"2026-04-09T20:43:05.700+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:87","msg":"auth-service ready (gRPC only)","grpc_port":"9090"}
+{"level":"info","ts":"2026-04-09T20:43:05.700+0530","caller":"D:/code/MyAgent/pkg/grpcserver/server.go:39","msg":"gRPC listening","addr":":9090"}
+{"level":"info","ts":"2026-04-09T20:43:13.497+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:93","msg":"Shutdown signal received, stopping gRPC server"}

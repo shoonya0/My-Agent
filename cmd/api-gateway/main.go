@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"myAgent/api/approvalpb"
 	"myAgent/api/authpb"
 	"myAgent/api/orchestratorpb"
 	"myAgent/internal/apigateway"
@@ -18,8 +19,10 @@ import (
 	apmotel "myAgent/pkg/otel"
 	"myAgent/pkg/redis"
 	"myAgent/pkg/storage"
+	ws "myAgent/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
@@ -28,6 +31,49 @@ import (
 )
 
 const serviceName = "api-gateway"
+
+// subscribeToApprovalUpdates establishes a gRPC stream with approval-service
+// to receive real-time job update notifications, then broadcasts them to
+// connected WebSocket clients via the hub.
+func subscribeToApprovalUpdates(ctx context.Context, client approvalpb.ApprovalServiceClient, hub *ws.Hub, nodeID string, log *zap.Logger) {
+	for {
+		stream, err := client.SubscribeJobUpdates(ctx, &approvalpb.SubscribeRequest{
+			NodeId: nodeID,
+		})
+		if err != nil {
+			log.Error("Failed to subscribe to approval updates", zap.Error(err))
+			// Retry after a delay
+			continue
+		}
+
+		log.Info("Subscribed to approval-service job updates stream", zap.String("node_id", nodeID))
+
+		for {
+			update, err := stream.Recv()
+			if err != nil {
+				log.Error("Stream receive error, reconnecting", zap.Error(err))
+				break // Will retry in outer loop
+			}
+
+			// Convert gRPC notification to WebSocket notification and broadcast
+			wsNotification := model.WSNotification{
+				Type:       update.NotificationType,
+				JobID:      update.JobId,
+				Status:     update.Status,
+				Message:    update.Message,
+				PreviewURL: update.PreviewUrl,
+				Error:      update.Error,
+			}
+
+			if err := hub.SendToJob(update.JobId, wsNotification); err != nil {
+				log.Warn("Failed to send WebSocket notification",
+					zap.Error(err),
+					zap.String("job_id", update.JobId),
+				)
+			}
+		}
+	}
+}
 
 // client connection is used to make gRPC calls to the auth-service
 func dialAuthService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
@@ -56,6 +102,19 @@ func dialOrchestratorService(cfg *model.Config, log *zap.Logger) *grpc.ClientCon
 		log.Fatal("Failed to dial orchestrator", zap.String("addr", cfg.OrchestratorServiceAddr), zap.Error(err))
 	}
 	log.Info("Connected to orchestrator gRPC", zap.String("addr", cfg.OrchestratorServiceAddr))
+	return conn
+}
+
+func dialApprovalService(cfg *model.Config, log *zap.Logger) *grpc.ClientConn {
+	conn, err := grpc.NewClient(
+		cfg.ApprovalServiceAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
+	if err != nil {
+		log.Fatal("Failed to dial approval-service", zap.String("addr", cfg.ApprovalServiceAddr), zap.Error(err))
+	}
+	log.Info("Connected to approval-service gRPC", zap.String("addr", cfg.ApprovalServiceAddr))
 	return conn
 }
 
@@ -90,6 +149,13 @@ func main() {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}
 	defer db.Close()
+	log.Info("Connected to MySQL", zap.String("dsn", cfg.MySQLDSN))
+
+	// Auto-migrate database tables
+	if err := mysql.AutoMigrate(context.Background(), db); err != nil {
+		log.Fatal("Failed to auto-migrate database", zap.Error(err))
+	}
+	log.Info("Database tables initialized successfully")
 
 	enc, err := crypto.NewEncryptor(cfg.EncryptionKey)
 	if err != nil {
@@ -116,6 +182,19 @@ func main() {
 	defer orchConn.Close()
 	orchClient := orchestratorpb.NewOrchestratorServiceClient(orchConn)
 
+	approvalConn := dialApprovalService(cfg, log)
+	defer approvalConn.Close()
+	approvalClient := approvalpb.NewApprovalServiceClient(approvalConn)
+
+	// Initialize WebSocket hub for real-time job updates
+	hub := ws.NewHub(log)
+	go hub.Run()
+
+	// Subscribe to approval-service gRPC stream for job updates
+	nodeID := uuid.New().String()
+	ctx := context.Background()
+	go subscribeToApprovalUpdates(ctx, approvalClient, hub, nodeID, log)
+
 	uploader, err := storage.NewS3Uploader(
 		context.Background(),
 		cfg.AWSBucket,
@@ -135,7 +214,7 @@ func main() {
 	// it uses the otelgin middleware to trace the requests
 	r.Use(otelgin.Middleware(serviceName))
 
-	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient, orchClient, uploader, credHandler)
+	handler := apigateway.NewGatewayHandler(cfg, rdb, authClient, orchClient, uploader, credHandler, hub)
 	handler.RegisterRoutes(r, log)
 
 	log.Info("HTTP server ready", zap.String("port", cfg.APIGatewayPort))

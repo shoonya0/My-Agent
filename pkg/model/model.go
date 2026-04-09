@@ -52,6 +52,8 @@ type Config struct {
 	AuthServiceAddr         string `mapstructure:"AUTH_SERVICE_ADDR" default:"localhost:9090"`
 	OrchestratorServiceAddr string `mapstructure:"ORCHESTRATOR_SERVICE_ADDR" default:"localhost:9091"`
 	OrchestratorGRPCPort    string `mapstructure:"ORCHESTRATOR_GRPC_PORT" default:"9091"`
+	ApprovalServiceAddr     string `mapstructure:"APPROVAL_SERVICE_ADDR" default:"localhost:9092"`
+	ApprovalGRPCPort        string `mapstructure:"APPROVAL_GRPC_PORT" default:"9092"`
 	JaegerEndpoint          string `mapstructure:"JAEGER_ENDPOINT" default:"localhost:4317"`
 	EncryptionKey           string `mapstructure:"ENCRYPTION_KEY" required:"true"`
 	PromptAgentSystemPrompt string `mapstructure:"PROMPT_AGENT_SYSTEM_PROMPT" optional:"true"`
