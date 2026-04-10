@@ -7,11 +7,12 @@ import (
 	"syscall"
 
 	"myAgent/internal/jobs/approval"
-	"myAgent/pkg/infrastructure/bootstrap"
-	"myAgent/pkg/infrastructure/grpcserver"
 	"myAgent/pkg/data/kafka"
 	"myAgent/pkg/data/redis"
+	"myAgent/pkg/infrastructure/bootstrap"
+	"myAgent/pkg/infrastructure/grpcserver"
 	"myAgent/pkg/storage"
+
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"

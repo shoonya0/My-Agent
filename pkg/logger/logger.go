@@ -13,9 +13,9 @@ const (
 )
 
 // New creates a *zap.Logger that writes structured JSON to both stdout and
-// a log file. The log file is created if it doesn't exist and truncated on
-// every call (clearing previous runs). level should be one of zap's level
-// strings: debug, info, warn, error, dpanic, panic, fatal.
+// a log file. The log file is opened in append mode with shared read access,
+// allowing concurrent viewing by text editors or tail commands.
+// level should be one of zap's level strings: debug, info, warn, error, dpanic, panic, fatal.
 //
 // The returned closeFunc must be called during shutdown (typically deferred
 // after zap.Logger.Sync) to release the log file handle.
@@ -26,9 +26,11 @@ func New(level string) (*zap.Logger, func() error) {
 		panic("logger: failed to create logs directory: " + err.Error())
 	}
 
-	file, err := os.Create(logFile)
+	// Open file in append mode with read/write permissions for owner and read for group/others
+	// O_APPEND allows concurrent writes, O_CREATE creates if doesn't exist
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		panic("logger: failed to create log file: " + err.Error())
+		panic("logger: failed to open log file: " + err.Error())
 	}
 
 	closeFunc := func() error {

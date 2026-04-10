@@ -1,7 +1,0 @@
-{"level":"info","ts":"2026-04-09T20:43:05.679+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:38","msg":"Starting auth-service","service":"auth-service","grpc_port":"9090","log_level":"info"}
-{"level":"info","ts":"2026-04-09T20:43:05.693+0530","caller":"D:/code/MyAgent/pkg/redis/pool.go:24","msg":"Connected to Redis","addr":"localhost:6379"}
-{"level":"info","ts":"2026-04-09T20:43:05.695+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:60","msg":"Connected to MySQL"}
-{"level":"info","ts":"2026-04-09T20:43:05.700+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:66","msg":"Database tables initialized successfully"}
-{"level":"info","ts":"2026-04-09T20:43:05.700+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:87","msg":"auth-service ready (gRPC only)","grpc_port":"9090"}
-{"level":"info","ts":"2026-04-09T20:43:05.700+0530","caller":"D:/code/MyAgent/pkg/grpcserver/server.go:39","msg":"gRPC listening","addr":":9090"}
-{"level":"info","ts":"2026-04-09T20:43:13.497+0530","caller":"D:/code/MyAgent/cmd/auth-service/main.go:93","msg":"Shutdown signal received, stopping gRPC server"}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"myAgent/api/approvalpb"
 	"myAgent/api/authpb"
@@ -32,26 +33,46 @@ const serviceName = "api-gateway"
 // to receive real-time job update notifications, then broadcasts them to
 // connected WebSocket clients via the hub.
 func subscribeToApprovalUpdates(ctx context.Context, client approvalpb.ApprovalServiceClient, hub *ws.Hub, nodeID string, log *zap.Logger) {
+	retryDelay := 2 * time.Second
+	maxRetryDelay := 30 * time.Second
+
 	for {
+		select {
+		case <-ctx.Done():
+			log.Info("Approval updates subscription stopping due to context cancellation")
+			return
+		default:
+		}
+
 		stream, err := client.SubscribeJobUpdates(ctx, &approvalpb.SubscribeRequest{
 			NodeId: nodeID,
 		})
 		if err != nil {
-			log.Error("Failed to subscribe to approval updates", zap.Error(err))
-			// Retry after a delay
-			continue
+			log.Error("Failed to subscribe to approval updates", zap.Error(err), zap.Duration("retry_in", retryDelay))
+			
+			select {
+			case <-time.After(retryDelay):
+				retryDelay = retryDelay * 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+				continue
+			case <-ctx.Done():
+				log.Info("Approval updates subscription stopping during retry")
+				return
+			}
 		}
 
 		log.Info("Subscribed to approval-service job updates stream", zap.String("node_id", nodeID))
+		retryDelay = 2 * time.Second
 
 		for {
 			update, err := stream.Recv()
 			if err != nil {
 				log.Error("Stream receive error, reconnecting", zap.Error(err))
-				break // Will retry in outer loop
+				break
 			}
 
-			// Convert gRPC notification to WebSocket notification and broadcast
 			wsNotification := types.WSNotification{
 				Type:       update.NotificationType,
 				JobID:      update.JobId,
@@ -183,10 +204,11 @@ func main() {
 	hub := ws.NewHub(log)
 	go hub.Run()
 
-	// Subscribe to approval-service gRPC stream for job updates
+	// Subscribe to approval-service gRPC stream for job updates with cancellable context
 	nodeID := uuid.New().String()
-	ctx := context.Background()
-	go subscribeToApprovalUpdates(ctx, approvalClient, hub, nodeID, log)
+	subCtx, subCancel := context.WithCancel(context.Background())
+	defer subCancel()
+	go subscribeToApprovalUpdates(subCtx, approvalClient, hub, nodeID, log)
 
 	uploader, err := storage.NewS3Uploader(
 		context.Background(),

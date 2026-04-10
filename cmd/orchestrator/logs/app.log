@@ -1,2 +1,0 @@
-{"level":"info","ts":"2026-03-30T22:46:36.777+0530","caller":"kafka/producer.go:43","msg":"Kafka producer connected","brokers":["localhost:9092"]}
-{"level":"info","ts":"2026-03-30T22:46:36.779+0530","caller":"orchestrator/main.go:54","msg":"Starting orchestrator HTTP server","port":"8082"}
