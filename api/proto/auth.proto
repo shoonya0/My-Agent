@@ -13,6 +13,7 @@ service AuthService {
   rpc Login(LoginRequest) returns (TokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   rpc HandleOAuthCallback(OAuthCallbackRequest) returns (TokenResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (TokenResponse);
 }
 
 message ValidateTokenRequest {
@@ -45,6 +46,8 @@ message LoginRequest {
 
 message LogoutRequest {
   string token = 1;
+  // Optional: when provided, the refresh token JTI is blacklisted (best-effort).
+  string refresh_token = 2;
 }
 
 message LogoutResponse {
@@ -55,4 +58,8 @@ message OAuthCallbackRequest {
   string provider = 1;
   string code = 2;
   string state = 3;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
 }

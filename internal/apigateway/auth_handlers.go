@@ -1,12 +1,16 @@
 package apigateway
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"strings"
 
 	"myAgent/api/authpb"
-	"myAgent/pkg/middleware/auth"
 	"myAgent/pkg/httputil"
 	"myAgent/pkg/messages"
+	"myAgent/pkg/middleware/auth"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -102,7 +106,11 @@ func (h *GatewayHandler) Login(c *gin.Context, log *zap.Logger) {
 	))
 }
 
-// Logout revokes the current access token via auth-service gRPC.
+type logoutGatewayRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// Logout revokes the current access token via auth-service gRPC and optionally the refresh token from the JSON body.
 func (h *GatewayHandler) Logout(c *gin.Context, log *zap.Logger) {
 	token, err := httputil.ExtractBearerToken(c)
 	if err != nil {
@@ -110,8 +118,21 @@ func (h *GatewayHandler) Logout(c *gin.Context, log *zap.Logger) {
 		return
 	}
 
+	var body logoutGatewayRequest
+	if c.Request.Body != nil {
+		dec := json.NewDecoder(io.LimitReader(c.Request.Body, 1<<20))
+		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			c.JSON(http.StatusBadRequest, messages.ErrorResponse(
+				messages.ErrCodeInvalidInput,
+				"Invalid JSON body",
+			))
+			return
+		}
+	}
+
 	_, err = h.authClient.Logout(c.Request.Context(), &authpb.LogoutRequest{
-		Token: token,
+		Token:        token,
+		RefreshToken: strings.TrimSpace(body.RefreshToken),
 	})
 	if err != nil {
 		st, ok := status.FromError(err)
@@ -191,6 +212,43 @@ func (h *GatewayHandler) OAuthCallback(c *gin.Context, log *zap.Logger) {
 
 	c.JSON(http.StatusOK, messages.SuccessResponse(
 		messages.MsgLoginSuccess,
+		protoToTokenResponse(pbResp),
+	))
+}
+
+// RefreshToken handles token refresh requests by forwarding to auth-service via gRPC.
+func (h *GatewayHandler) RefreshToken(c *gin.Context, log *zap.Logger) {
+	var req struct {
+		RefreshToken string `json:"refresh_token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp := messages.ParseBindingErrorWithFields(err)
+		c.JSON(http.StatusBadRequest, resp)
+		return
+	}
+
+	pbResp, err := h.authClient.RefreshToken(c.Request.Context(), &authpb.RefreshTokenRequest{
+		RefreshToken: req.RefreshToken,
+	})
+	if err != nil {
+		st, ok := status.FromError(err)
+		if ok && st.Code() == codes.Unauthenticated {
+			c.JSON(http.StatusUnauthorized, messages.ErrorResponse(
+				messages.ErrCodeUnauthorized,
+				"Invalid or expired refresh token",
+			))
+			return
+		}
+		log.Error("RefreshToken gRPC call failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, messages.ErrorResponse(
+			messages.ErrCodeInternalServer,
+			"Token refresh failed",
+		))
+		return
+	}
+
+	c.JSON(http.StatusOK, messages.SuccessResponse(
+		"Token refreshed successfully",
 		protoToTokenResponse(pbResp),
 	))
 }

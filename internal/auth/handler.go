@@ -82,7 +82,7 @@ func (h *Handler) Login(ctx context.Context, req *authpb.LoginRequest) (*authpb.
 
 // Logout implements authpb.AuthServiceServer.
 func (h *Handler) Logout(ctx context.Context, req *authpb.LogoutRequest) (*authpb.LogoutResponse, error) {
-	if err := h.svc.RevokeToken(ctx, req.GetToken()); err != nil {
+	if err := h.svc.Logout(ctx, req.GetToken(), req.GetRefreshToken()); err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidLogoutToken),
 			errors.Is(err, ErrLogoutTokenMissingJTI),
@@ -119,6 +119,22 @@ func (h *Handler) HandleOAuthCallback(ctx context.Context, req *authpb.OAuthCall
 		}
 		h.log.Error("OAuth callback gRPC failed", zap.Error(err))
 		return nil, status.Errorf(codes.Internal, "OAuth failed")
+	}
+	return tokenResponseToProto(resp), nil
+}
+
+// RefreshToken implements authpb.AuthServiceServer.
+func (h *Handler) RefreshToken(ctx context.Context, req *authpb.RefreshTokenRequest) (*authpb.TokenResponse, error) {
+	resp, err := h.svc.RefreshToken(ctx, req.GetRefreshToken())
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidRefreshToken):
+			return nil, status.Errorf(codes.Unauthenticated, "invalid or expired refresh token")
+		case errors.Is(err, ErrRefreshTokenRevoked):
+			return nil, status.Errorf(codes.Unauthenticated, "refresh token has been revoked")
+		}
+		h.log.Error("RefreshToken gRPC failed", zap.Error(err))
+		return nil, status.Errorf(codes.Internal, "token refresh failed")
 	}
 	return tokenResponseToProto(resp), nil
 }

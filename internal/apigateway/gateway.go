@@ -6,8 +6,8 @@ import (
 	"myAgent/internal/platforms/credentials"
 	"myAgent/pkg/middleware/auth"
 	"myAgent/pkg/middleware/ratelimit"
-	"myAgent/pkg/types"
 	"myAgent/pkg/storage"
+	"myAgent/pkg/types"
 	ws "myAgent/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -61,6 +61,9 @@ func (h *GatewayHandler) RegisterRoutes(r *gin.Engine, log *zap.Logger) {
 		})
 		public.POST("/login", func(c *gin.Context) {
 			h.Login(c, log)
+		})
+		public.POST("/refresh", func(c *gin.Context) {
+			h.RefreshToken(c, log)
 		})
 		public.POST("/logout", func(c *gin.Context) {
 			h.Logout(c, log)

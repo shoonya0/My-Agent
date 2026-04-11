@@ -18,6 +18,7 @@ var ErrUserNotFound = errors.New("auth: user not found")
 type Repository interface {
 	CreateUser(ctx context.Context, user *types.User) error
 	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
+	GetUserByID(ctx context.Context, userID string) (*types.User, error)
 	GetUserByProviderID(ctx context.Context, provider, providerID string) (*types.User, error)
 	UpdateUser(ctx context.Context, user *types.User) error
 }
@@ -55,6 +56,12 @@ func (r *mysqlRepository) GetUserByEmail(ctx context.Context, email string) (*ty
 	const q = `SELECT id, email, password_hash, display_name, avatar_url, provider, provider_id, roles, created_at, updated_at
 		FROM users WHERE email = ?`
 	return r.scanUser(ctx, q, email)
+}
+
+func (r *mysqlRepository) GetUserByID(ctx context.Context, userID string) (*types.User, error) {
+	const q = `SELECT id, email, password_hash, display_name, avatar_url, provider, provider_id, roles, created_at, updated_at
+		FROM users WHERE id = ?`
+	return r.scanUser(ctx, q, userID)
 }
 
 func (r *mysqlRepository) GetUserByProviderID(ctx context.Context, provider, providerID string) (*types.User, error) {

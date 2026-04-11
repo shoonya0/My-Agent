@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
@@ -55,6 +56,10 @@ var (
 	ErrOAuthProfileFailed = errors.New("auth: OAuth profile fetch failed")
 	// ErrOAuthEmailConflict is returned when the OAuth email is already registered to another account.
 	ErrOAuthEmailConflict = errors.New("auth: OAuth email already in use")
+	// ErrInvalidRefreshToken is returned when the refresh token is invalid or expired.
+	ErrInvalidRefreshToken = errors.New("auth: invalid or expired refresh token")
+	// ErrRefreshTokenRevoked is returned when the refresh token has been revoked.
+	ErrRefreshTokenRevoked = errors.New("auth: refresh token has been revoked")
 )
 
 var googleOAuthEndpoint = oauth2.Endpoint{
@@ -72,8 +77,9 @@ type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*types.TokenResponse, error)
 	Login(ctx context.Context, req LoginRequest) (*types.TokenResponse, error)
 	ValidateToken(ctx context.Context, token string) (*types.Claims, error)
-	RevokeToken(ctx context.Context, token string) error
+	Logout(ctx context.Context, accessToken, refreshToken string) error
 	HandleOAuthCallback(ctx context.Context, req OAuthCallbackParams) (*types.TokenResponse, error)
+	RefreshToken(ctx context.Context, refreshToken string) (*types.TokenResponse, error)
 }
 
 // OAuthCallbackParams is the domain input for completing an OAuth2 authorization code callback.
@@ -118,9 +124,10 @@ func NewService(repo Repository, rdb *redis.Client, cfg *types.Config, log *zap.
 // jwtClaims mirrors auth.CustomClaims — identical JSON tags ensure tokens
 // issued here are accepted by the api-gateway's JWT middleware.
 type jwtClaims struct {
-	UserID string   `json:"user_id"`
-	Roles  []string `json:"roles"`
-	Email  string   `json:"email"`
+	UserID   string   `json:"user_id"`
+	Roles    []string `json:"roles"`
+	Email    string   `json:"email"`
+	TokenUse string   `json:"token_use"`
 	jwt.RegisteredClaims
 }
 
@@ -187,6 +194,11 @@ func (s *authService) ValidateToken(ctx context.Context, tokenStr string) (*type
 		return nil, errors.New("auth: invalid token claims")
 	}
 
+	// token_use distinguishes access vs refresh; only access tokens may call ValidateToken.
+	if claims.TokenUse == "refresh" {
+		return nil, errors.New("auth: refresh token cannot be used as an access token")
+	}
+
 	if claims.ID != "" {
 		exists, err := s.rdb.Exists(ctx, "jwt:blacklist:"+claims.ID).Result()
 		if err != nil {
@@ -208,7 +220,23 @@ func (s *authService) ValidateToken(ctx context.Context, tokenStr string) (*type
 	}, nil
 }
 
-func (s *authService) RevokeToken(ctx context.Context, tokenStr string) error {
+// Logout blacklists the access token JTI (required). When refreshToken is non-empty, it also
+// blacklists that refresh token JTI so the session cannot be extended after sign-out.
+func (s *authService) Logout(ctx context.Context, accessToken, refreshToken string) error {
+	if err := s.revokeAccessToken(ctx, accessToken); err != nil {
+		return err
+	}
+	rt := strings.TrimSpace(refreshToken)
+	if rt == "" {
+		return nil
+	}
+	if err := s.revokeRefreshToken(ctx, rt); err != nil {
+		s.log.Warn("Refresh token could not be revoked during logout", zap.Error(err))
+	}
+	return nil
+}
+
+func (s *authService) revokeAccessToken(ctx context.Context, tokenStr string) error {
 	token, err := jwt.ParseWithClaims(tokenStr, &jwtClaims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -224,6 +252,10 @@ func (s *authService) RevokeToken(ctx context.Context, tokenStr string) error {
 		return ErrLogoutTokenMissingJTI
 	}
 
+	if claims.TokenUse == "refresh" {
+		return fmt.Errorf("%w: bearer must be an access token", ErrInvalidLogoutToken)
+	}
+
 	if claims.ExpiresAt == nil {
 		return ErrLogoutTokenMissingExpiry
 	}
@@ -235,10 +267,49 @@ func (s *authService) RevokeToken(ctx context.Context, tokenStr string) error {
 
 	key := "jwt:blacklist:" + claims.ID
 	if err := s.rdb.Set(ctx, key, "1", ttl).Err(); err != nil {
-		return fmt.Errorf("auth: blacklist token: %w", err)
+		return fmt.Errorf("auth: blacklist access token: %w", err)
 	}
 
-	s.log.Info("Token revoked", zap.String("jti", claims.ID))
+	s.log.Info("Access token revoked", zap.String("jti", claims.ID))
+	return nil
+}
+
+// revokeRefreshToken blacklists a refresh token by JTI. Only tokens with token_use=refresh are accepted.
+func (s *authService) revokeRefreshToken(ctx context.Context, tokenStr string) error {
+	token, err := jwt.ParseWithClaims(tokenStr, &jwtClaims{}, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return s.jwtSecret, nil
+	})
+	if err != nil {
+		return fmt.Errorf("refresh: %w", err)
+	}
+
+	claims, ok := token.Claims.(*jwtClaims)
+	if !ok || claims.ID == "" {
+		return ErrLogoutTokenMissingJTI
+	}
+
+	if claims.TokenUse != "refresh" {
+		return fmt.Errorf("refresh: expected refresh token")
+	}
+
+	if claims.ExpiresAt == nil {
+		return ErrLogoutTokenMissingExpiry
+	}
+
+	ttl := time.Until(claims.ExpiresAt.Time)
+	if ttl <= 0 {
+		return nil
+	}
+
+	key := "jwt:blacklist:" + claims.ID
+	if err := s.rdb.Set(ctx, key, "1", ttl).Err(); err != nil {
+		return fmt.Errorf("auth: blacklist refresh token: %w", err)
+	}
+
+	s.log.Info("Refresh token revoked", zap.String("jti", claims.ID))
 	return nil
 }
 
@@ -516,13 +587,113 @@ func (s *authService) fetchGitHubPrimaryEmail(ctx context.Context, client *http.
 	return "", fmt.Errorf("%w: no verified email", ErrOAuthProfileFailed)
 }
 
+// RefreshToken validates a refresh JWT (token_use must be "refresh"), rejects revoked JTIs,
+// then rotates: the presented refresh JTI is blacklisted and a new access+refresh pair is issued.
+func (s *authService) RefreshToken(ctx context.Context, refreshTokenStr string) (*types.TokenResponse, error) {
+	ctx, span := otel.Tracer(tracerName).Start(ctx, "auth.RefreshToken")
+	defer span.End()
+
+	token, err := jwt.ParseWithClaims(refreshTokenStr, &jwtClaims{}, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return s.jwtSecret, nil
+	})
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "parse token failed")
+		return nil, fmt.Errorf("%w: %v", ErrInvalidRefreshToken, err)
+	}
+
+	claims, ok := token.Claims.(*jwtClaims)
+	if !ok || !token.Valid {
+		span.SetStatus(otelcodes.Error, "invalid token claims")
+		return nil, ErrInvalidRefreshToken
+	}
+
+	if claims.Subject == "" {
+		span.SetStatus(otelcodes.Error, "missing subject")
+		return nil, ErrInvalidRefreshToken
+	}
+
+	if claims.TokenUse != "refresh" {
+		span.SetStatus(otelcodes.Error, "wrong token type")
+		return nil, fmt.Errorf("%w: token is not a refresh token", ErrInvalidRefreshToken)
+	}
+
+	if claims.ID != "" {
+		exists, err := s.rdb.Exists(ctx, "jwt:blacklist:"+claims.ID).Result()
+		if err != nil {
+			s.log.Warn("Redis blacklist check failed for refresh token", zap.Error(err))
+		} else if exists > 0 {
+			span.SetStatus(otelcodes.Error, "token revoked")
+			return nil, ErrRefreshTokenRevoked
+		}
+	}
+
+	user, err := s.repo.GetUserByID(ctx, claims.Subject)
+	if errors.Is(err, ErrUserNotFound) {
+		span.SetStatus(otelcodes.Error, "user not found")
+		return nil, ErrInvalidRefreshToken
+	}
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "get user failed")
+		return nil, fmt.Errorf("auth: get user: %w", err)
+	}
+
+	var rotated bool
+	var rotationBlacklistTTL time.Duration
+	if claims.ID != "" && claims.ExpiresAt != nil {
+		ttl := time.Until(claims.ExpiresAt.Time)
+		if ttl > 0 {
+			rotationBlacklistTTL = ttl
+			span.AddEvent("refresh_token.blacklist_attempt", trace.WithAttributes(
+				attribute.Int64("blacklist.ttl_remaining_ms", ttl.Milliseconds()),
+			))
+			key := "jwt:blacklist:" + claims.ID
+			if err := s.rdb.Set(ctx, key, "1", ttl).Err(); err != nil {
+				s.log.Error("failed to blacklist refresh token during rotation",
+					zap.Error(err),
+					zap.String("user_id", user.ID),
+				)
+				span.RecordError(err)
+				span.AddEvent("refresh_token.blacklist_failed", trace.WithAttributes(
+					attribute.String("error", err.Error()),
+				))
+				span.SetStatus(otelcodes.Error, "blacklist old refresh token failed")
+				return nil, fmt.Errorf("auth: blacklist refresh token for rotation: %w", err)
+			}
+			rotated = true
+			span.AddEvent("refresh_token.blacklisted", trace.WithAttributes(
+				attribute.Int64("blacklist.ttl_remaining_ms", ttl.Milliseconds()),
+			))
+		}
+	}
+
+	span.SetAttributes(attribute.String("user.id", user.ID))
+	logFields := []zap.Field{zap.String("user_id", user.ID)}
+	if rotated {
+		logFields = append(logFields,
+			zap.Bool("refresh_token_rotated", true),
+			zap.Duration("old_refresh_blacklist_ttl", rotationBlacklistTTL),
+		)
+	}
+	s.log.Info("token refreshed", logFields...)
+
+	return s.issueTokenPair(user)
+}
+
+// issueTokenPair signs a new access token (token_use=access) and refresh token (token_use=refresh),
+// each with a unique JTI for blacklist-based revocation and rotation.
 func (s *authService) issueTokenPair(user *types.User) (*types.TokenResponse, error) {
 	now := time.Now()
 
 	accessClaims := jwtClaims{
-		UserID: user.ID,
-		Roles:  user.Roles,
-		Email:  user.Email,
+		UserID:   user.ID,
+		Roles:    user.Roles,
+		Email:    user.Email,
+		TokenUse: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			Subject:   user.ID,
@@ -536,11 +707,14 @@ func (s *authService) issueTokenPair(user *types.User) (*types.TokenResponse, er
 		return nil, fmt.Errorf("auth: sign access token: %w", err)
 	}
 
-	refreshClaims := jwt.RegisteredClaims{
-		ID:        uuid.NewString(),
-		Subject:   user.ID,
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(refreshTokenTTL)),
+	refreshClaims := jwtClaims{
+		TokenUse: "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
+			Subject:   user.ID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(refreshTokenTTL)),
+		},
 	}
 
 	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString(s.jwtSecret)
