@@ -26,9 +26,9 @@ func New(level string) (*zap.Logger, func() error) {
 		panic("logger: failed to create logs directory: " + err.Error())
 	}
 
-	// Open file in append mode with read/write permissions for owner and read for group/others
-	// O_APPEND allows concurrent writes, O_CREATE creates if doesn't exist
-	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Open file in truncate mode to clear old logs on restart
+	// O_TRUNC clears existing content, O_CREATE creates if doesn't exist
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		panic("logger: failed to open log file: " + err.Error())
 	}
