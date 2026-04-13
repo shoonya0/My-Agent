@@ -8,6 +8,7 @@ import (
 	"myAgent/internal/workers/promptagent"
 	"myAgent/pkg/infrastructure/bootstrap"
 	"myAgent/pkg/data/kafka"
+	"myAgent/pkg/data/mysql"
 	"myAgent/pkg/llm"
 
 	"go.uber.org/zap"
@@ -32,6 +33,15 @@ func main() {
 
 	cfg, log := svc.Config, svc.Log
 
+	db, err := mysql.NewDB(context.Background(), cfg.MySQLDSN)
+	if err != nil {
+		log.Fatal("Failed to connect to MySQL", zap.Error(err))
+	}
+	defer db.Close()
+	log.Info("Connected to MySQL")
+
+	repo := promptagent.NewRepository(db)
+
 	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, consumerGroupID, topicPromptRefineRequested, log)
 	if err != nil {
 		log.Fatal("Failed to create Kafka consumer", zap.Error(err))
@@ -46,7 +56,7 @@ func main() {
 
 	refiner := llm.NewRefiner(cfg.OpenAIKey, cfg.PromptAgentModel, cfg.PromptAgentSystemPrompt, log)
 
-	w := promptagent.NewWorker(consumer, producer, refiner, log)
+	w := promptagent.NewWorker(consumer, producer, refiner, repo, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

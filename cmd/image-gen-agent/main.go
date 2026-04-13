@@ -9,6 +9,7 @@ import (
 	"myAgent/pkg/infrastructure/bootstrap"
 	"myAgent/pkg/comfyui"
 	"myAgent/pkg/data/kafka"
+	"myAgent/pkg/data/mysql"
 	"myAgent/pkg/storage"
 
 	"go.uber.org/zap"
@@ -32,6 +33,15 @@ func main() {
 	}()
 
 	cfg, log := svc.Config, svc.Log
+
+	db, err := mysql.NewDB(context.Background(), cfg.MySQLDSN)
+	if err != nil {
+		log.Fatal("Failed to connect to MySQL", zap.Error(err))
+	}
+	defer db.Close()
+	log.Info("Connected to MySQL")
+
+	repo := imagegenagent.NewRepository(db)
 
 	consumer, err := kafka.NewConsumer(cfg.KafkaBrokers, consumerGroupID, topicPromptRefined, log)
 	if err != nil {
@@ -60,7 +70,7 @@ func main() {
 		log.Fatal("Failed to initialise S3 uploader", zap.Error(err))
 	}
 
-	w := imagegenagent.NewWorker(consumer, producer, comfyCli, uploader, log)
+	w := imagegenagent.NewWorker(consumer, producer, comfyCli, uploader, repo, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

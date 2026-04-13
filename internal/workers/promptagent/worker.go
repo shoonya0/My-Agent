@@ -29,15 +29,17 @@ type Worker struct {
 	consumer kafka.Consumer
 	producer kafka.Producer
 	refiner  llm.PromptRefiner
+	repo     Repository
 	log      *zap.Logger
 }
 
 // NewWorker constructs a Worker with the required dependencies.
-func NewWorker(consumer kafka.Consumer, producer kafka.Producer, refiner llm.PromptRefiner, log *zap.Logger) *Worker {
+func NewWorker(consumer kafka.Consumer, producer kafka.Producer, refiner llm.PromptRefiner, repo Repository, log *zap.Logger) *Worker {
 	return &Worker{
 		consumer: consumer,
 		producer: producer,
 		refiner:  refiner,
+		repo:     repo,
 		log:      log,
 	}
 }
@@ -81,6 +83,15 @@ func (w *Worker) handle(ctx context.Context, msg *kafka.Message) error {
 		)
 		w.publishFailure(ctx, job.JobID, job.UserID, fmt.Sprintf("refine prompt: %v", err))
 		return fmt.Errorf("refine prompt for job %s: %w", job.JobID, err)
+	}
+
+	if err := w.repo.UpdateRefinedPrompt(ctx, job.JobID, refined.Prompt); err != nil {
+		w.log.Error("Failed to persist refined prompt",
+			zap.Error(err),
+			zap.String("job_id", job.JobID),
+		)
+		w.publishFailure(ctx, job.JobID, job.UserID, fmt.Sprintf("persist refined prompt: %v", err))
+		return fmt.Errorf("update refined_prompt for job %s: %w", job.JobID, err)
 	}
 
 	event := types.RefinedPromptEvent{

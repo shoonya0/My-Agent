@@ -35,16 +35,18 @@ type Worker struct {
 	producer kafka.Producer
 	comfy    comfyui.Client
 	uploader storage.Uploader
+	repo     Repository
 	log      *zap.Logger
 }
 
 // NewWorker constructs a Worker with the required dependencies.
-func NewWorker(consumer kafka.Consumer, producer kafka.Producer, comfy comfyui.Client, uploader storage.Uploader, log *zap.Logger) *Worker {
+func NewWorker(consumer kafka.Consumer, producer kafka.Producer, comfy comfyui.Client, uploader storage.Uploader, repo Repository, log *zap.Logger) *Worker {
 	return &Worker{
 		consumer: consumer,
 		producer: producer,
 		comfy:    comfy,
 		uploader: uploader,
+		repo:     repo,
 		log:      log,
 	}
 }
@@ -136,6 +138,15 @@ func (w *Worker) handle(ctx context.Context, msg *kafka.Message) error {
 		)
 		w.publishFailure(ctx, event.JobID, event.UserID, fmt.Sprintf("upload to s3: %v", err))
 		return fmt.Errorf("upload image for job %s: %w", event.JobID, err)
+	}
+
+	if err := w.repo.UpdateAfterGeneration(ctx, event.JobID, imageURL, types.JobStatusAwaitingApproval); err != nil {
+		w.log.Error("Failed to persist generated image URL and status",
+			zap.Error(err),
+			zap.String("job_id", event.JobID),
+		)
+		w.publishFailure(ctx, event.JobID, event.UserID, fmt.Sprintf("persist generation result: %v", err))
+		return fmt.Errorf("update job after generation for job %s: %w", event.JobID, err)
 	}
 
 	genEvent := types.ImageGeneratedEvent{
