@@ -1,6 +1,8 @@
 package approval
 
 import (
+	"context"
+
 	"myAgent/api/approvalpb"
 
 	"go.uber.org/zap"
@@ -46,6 +48,13 @@ func (h *GRPCHandler) SubscribeJobUpdates(req *approvalpb.SubscribeRequest, stre
 	)
 
 	return stream.Context().Err()
+}
+
+// NotifyJobUpdate receives a terminal failure notification from the orchestrator
+// and broadcasts it to all connected api-gateway streams (WebSocket clients).
+func (h *GRPCHandler) NotifyJobUpdate(ctx context.Context, n *approvalpb.JobUpdateNotification) (*approvalpb.NotifyJobUpdateResponse, error) {
+	h.streamManager.Broadcast(n)
+	return &approvalpb.NotifyJobUpdateResponse{}, nil
 }
 
 // GRPCRegistrar returns a function that registers this handler with a gRPC server.

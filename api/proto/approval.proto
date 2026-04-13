@@ -12,6 +12,11 @@ service ApprovalService {
   // updates to the connected api-gateway instance. The stream remains open
   // and sends notifications as jobs progress through the pipeline.
   rpc SubscribeJobUpdates(SubscribeRequest) returns (stream JobUpdateNotification);
+
+  // NotifyJobUpdate is called by the orchestrator after persisting a worker-
+  // reported failure so this service can broadcast an error to api-gateway
+  // (WebSocket clients). Internal use only.
+  rpc NotifyJobUpdate(JobUpdateNotification) returns (NotifyJobUpdateResponse);
 }
 
 // SubscribeRequest initiates a subscription stream.
@@ -48,3 +53,6 @@ message JobUpdateNotification {
   // error contains error details when notification_type="error"
   string error = 7;
 }
+
+// NotifyJobUpdateResponse acknowledges a NotifyJobUpdate call.
+message NotifyJobUpdateResponse {}

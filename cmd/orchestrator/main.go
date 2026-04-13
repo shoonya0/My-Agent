@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"os"
 	"os/signal"
 	"syscall"
 
+	"myAgent/api/approvalpb"
 	"myAgent/internal/jobs/orchestrator"
 	"myAgent/pkg/infrastructure/bootstrap"
 	"myAgent/pkg/infrastructure/grpcserver"
@@ -17,9 +17,23 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const serviceName = "orchestrator"
+
+func dialApprovalService(addr string, log *zap.Logger) *grpc.ClientConn {
+	conn, err := grpc.NewClient(
+		addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
+	if err != nil {
+		log.Fatal("Failed to dial approval-service", zap.String("addr", addr), zap.Error(err))
+	}
+	log.Info("Connected to approval-service gRPC", zap.String("addr", addr))
+	return conn
+}
 
 func main() {
 	svc, err := bootstrap.InitService(serviceName)
@@ -62,10 +76,20 @@ func main() {
 	}
 	defer producer.Close()
 
+	failedConsumer, err := orchestrator.NewJobFailedConsumer(cfg.KafkaBrokers, log)
+	if err != nil {
+		log.Fatal("Failed to create job.failed Kafka consumer", zap.Error(err))
+	}
+	defer failedConsumer.Close()
+
+	approvalConn := dialApprovalService(cfg.ApprovalServiceAddr, log)
+	defer approvalConn.Close()
+	approvalClient := approvalpb.NewApprovalServiceClient(approvalConn)
+
 	llmClient := llm.NewClient(cfg.OpenAIKey, cfg.OrchestratorModel, log)
 
 	repo := orchestrator.NewRepository(db)
-	orchSvc := orchestrator.NewService(repo, producer, llmClient, rdb, log)
+	orchSvc := orchestrator.NewService(repo, producer, llmClient, rdb, approvalClient, log)
 	h := orchestrator.NewHandler(orchSvc, log)
 
 	grpcOpts := []grpc.ServerOption{
@@ -79,8 +103,19 @@ func main() {
 	}
 	defer grpcSrv.GracefulStop()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Info("Shutdown signal received, stopping gRPC server")
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := orchestrator.RunJobFailedConsumer(ctx, failedConsumer, orchSvc); err != nil && ctx.Err() == nil {
+			log.Error("job.failed consumer stopped with error", zap.Error(err))
+		}
+	}()
+
+	log.Info("orchestrator ready (gRPC + job.failed consumer)",
+		zap.String("consumer_group", orchestrator.JobFailedConsumerGroupID),
+	)
+
+	<-ctx.Done()
+	log.Info("Shutdown signal received, stopping orchestrator")
 }

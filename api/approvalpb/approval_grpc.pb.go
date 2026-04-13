@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ApprovalService_SubscribeJobUpdates_FullMethodName = "/approval.v1.ApprovalService/SubscribeJobUpdates"
+	ApprovalService_NotifyJobUpdate_FullMethodName     = "/approval.v1.ApprovalService/NotifyJobUpdate"
 )
 
 // ApprovalServiceClient is the client API for ApprovalService service.
@@ -34,6 +35,10 @@ type ApprovalServiceClient interface {
 	// updates to the connected api-gateway instance. The stream remains open
 	// and sends notifications as jobs progress through the pipeline.
 	SubscribeJobUpdates(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobUpdateNotification], error)
+	// NotifyJobUpdate is called by the orchestrator after persisting a worker-
+	// reported failure so this service can broadcast an error to api-gateway
+	// (WebSocket clients). Internal use only.
+	NotifyJobUpdate(ctx context.Context, in *JobUpdateNotification, opts ...grpc.CallOption) (*NotifyJobUpdateResponse, error)
 }
 
 type approvalServiceClient struct {
@@ -63,6 +68,16 @@ func (c *approvalServiceClient) SubscribeJobUpdates(ctx context.Context, in *Sub
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ApprovalService_SubscribeJobUpdatesClient = grpc.ServerStreamingClient[JobUpdateNotification]
 
+func (c *approvalServiceClient) NotifyJobUpdate(ctx context.Context, in *JobUpdateNotification, opts ...grpc.CallOption) (*NotifyJobUpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NotifyJobUpdateResponse)
+	err := c.cc.Invoke(ctx, ApprovalService_NotifyJobUpdate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ApprovalServiceServer is the server API for ApprovalService service.
 // All implementations must embed UnimplementedApprovalServiceServer
 // for forward compatibility.
@@ -75,6 +90,10 @@ type ApprovalServiceServer interface {
 	// updates to the connected api-gateway instance. The stream remains open
 	// and sends notifications as jobs progress through the pipeline.
 	SubscribeJobUpdates(*SubscribeRequest, grpc.ServerStreamingServer[JobUpdateNotification]) error
+	// NotifyJobUpdate is called by the orchestrator after persisting a worker-
+	// reported failure so this service can broadcast an error to api-gateway
+	// (WebSocket clients). Internal use only.
+	NotifyJobUpdate(context.Context, *JobUpdateNotification) (*NotifyJobUpdateResponse, error)
 	mustEmbedUnimplementedApprovalServiceServer()
 }
 
@@ -87,6 +106,9 @@ type UnimplementedApprovalServiceServer struct{}
 
 func (UnimplementedApprovalServiceServer) SubscribeJobUpdates(*SubscribeRequest, grpc.ServerStreamingServer[JobUpdateNotification]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeJobUpdates not implemented")
+}
+func (UnimplementedApprovalServiceServer) NotifyJobUpdate(context.Context, *JobUpdateNotification) (*NotifyJobUpdateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method NotifyJobUpdate not implemented")
 }
 func (UnimplementedApprovalServiceServer) mustEmbedUnimplementedApprovalServiceServer() {}
 func (UnimplementedApprovalServiceServer) testEmbeddedByValue()                         {}
@@ -120,13 +142,36 @@ func _ApprovalService_SubscribeJobUpdates_Handler(srv interface{}, stream grpc.S
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ApprovalService_SubscribeJobUpdatesServer = grpc.ServerStreamingServer[JobUpdateNotification]
 
+func _ApprovalService_NotifyJobUpdate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JobUpdateNotification)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApprovalServiceServer).NotifyJobUpdate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApprovalService_NotifyJobUpdate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApprovalServiceServer).NotifyJobUpdate(ctx, req.(*JobUpdateNotification))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ApprovalService_ServiceDesc is the grpc.ServiceDesc for ApprovalService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ApprovalService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "approval.v1.ApprovalService",
 	HandlerType: (*ApprovalServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "NotifyJobUpdate",
+			Handler:    _ApprovalService_NotifyJobUpdate_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "SubscribeJobUpdates",

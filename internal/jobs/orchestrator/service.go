@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"myAgent/api/approvalpb"
 	"myAgent/pkg/data/kafka"
 	"myAgent/pkg/llm"
 	"myAgent/pkg/types"
@@ -16,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
@@ -34,6 +36,7 @@ type Service interface {
 	GetJob(ctx context.Context, jobID, userID string) (*types.GetJobResponse, error)
 	ApproveJob(ctx context.Context, jobID, userID string, req types.ApproveJobRequest) (*types.JobActionResponse, error)
 	RejectJob(ctx context.Context, jobID, userID string, req types.RejectJobRequest) (*types.JobActionResponse, error)
+	ConsumeJobFailedEvents(ctx context.Context, consumer kafka.Consumer) error
 }
 
 // SubmitRequest is the service-layer input for job submission.
@@ -49,16 +52,19 @@ type orchestratorService struct {
 	producer kafka.Producer
 	llm      llm.Client
 	rdb      *redis.Client
+	approval approvalpb.ApprovalServiceClient
 	log      *zap.Logger
 }
 
 // NewService constructs an orchestrator Service with the required dependencies.
-func NewService(repo Repository, producer kafka.Producer, llmClient llm.Client, rdb *redis.Client, log *zap.Logger) Service {
+// approval may be nil; job failure notifications to WebSocket clients are skipped in that case.
+func NewService(repo Repository, producer kafka.Producer, llmClient llm.Client, rdb *redis.Client, approval approvalpb.ApprovalServiceClient, log *zap.Logger) Service {
 	return &orchestratorService{
 		repo:     repo,
 		producer: producer,
 		llm:      llmClient,
 		rdb:      rdb,
+		approval: approval,
 		log:      log,
 	}
 }
@@ -353,6 +359,141 @@ func (s *orchestratorService) recordTransition(ctx context.Context, jobID, from,
 			zap.String("job_id", jobID),
 			zap.String("from", from),
 			zap.String("to", to),
+		)
+	}
+}
+
+// ConsumeJobFailedEvents runs the Kafka consumer loop for job.failed until ctx is cancelled.
+func (s *orchestratorService) ConsumeJobFailedEvents(ctx context.Context, consumer kafka.Consumer) error {
+	s.log.Info("orchestrator job.failed consumer running", zap.String("topic", topicJobFailed))
+	return consumer.Consume(ctx, s.handleJobFailedKafkaMessage)
+}
+
+func (s *orchestratorService) handleJobFailedKafkaMessage(ctx context.Context, msg *kafka.Message) error {
+	var evt types.JobFailedEvent
+	if err := json.Unmarshal(msg.Value, &evt); err != nil {
+		s.log.Error("Failed to unmarshal job.failed event",
+			zap.Error(err),
+			zap.String("topic", msg.Topic),
+			zap.Int64("offset", msg.Offset),
+		)
+		return nil
+	}
+	if evt.JobID == "" {
+		s.log.Warn("job.failed event missing job_id")
+		return nil
+	}
+	if len(evt.TraceCtx) > 0 {
+		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(evt.TraceCtx))
+	}
+	ctx, span := otel.Tracer(tracerName).Start(ctx, "orchestrator.HandleJobFailed")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("job.id", evt.JobID),
+		attribute.String("user.id", evt.UserID),
+		attribute.String("failed_at", evt.FailedAt),
+	)
+
+	if err := s.applyKafkaJobFailure(ctx, evt); err != nil {
+		s.log.Error("Failed to apply job.failed event",
+			zap.Error(err),
+			zap.String("job_id", evt.JobID),
+		)
+	}
+	return nil
+}
+
+func (s *orchestratorService) applyKafkaJobFailure(ctx context.Context, evt types.JobFailedEvent) error {
+	job, err := s.repo.GetJobByID(ctx, evt.JobID)
+	if err != nil {
+		if errors.Is(err, ErrJobNotFound) {
+			s.log.Warn("job.failed for unknown job", zap.String("job_id", evt.JobID))
+			return nil
+		}
+		return fmt.Errorf("orchestrator: get job: %w", err)
+	}
+	if job.UserID != evt.UserID {
+		s.log.Warn("job.failed user_id mismatch",
+			zap.String("job_id", evt.JobID),
+			zap.String("expected_user", job.UserID),
+			zap.String("event_user", evt.UserID),
+		)
+		return nil
+	}
+	if job.Status == types.JobStatusRejected {
+		// Reject path publishes job.failed after the job is already rejected.
+		return nil
+	}
+	if job.Status == types.JobStatusFailed {
+		s.log.Debug("job.failed ignored; job already failed",
+			zap.String("job_id", evt.JobID),
+		)
+		return nil
+	}
+
+	fromStatus := job.Status
+	if err := s.repo.UpdateJobFailed(ctx, evt.JobID, evt.ErrorMessage); err != nil {
+		return fmt.Errorf("orchestrator: persist failure: %w", err)
+	}
+	s.insertFailureStatusHistory(ctx, evt.JobID, fromStatus, evt.FailedAt, evt.ErrorMessage)
+
+	if s.rdb != nil {
+		if err := s.rdb.Del(ctx, previewKeyPrefix+evt.JobID).Err(); err != nil {
+			s.log.Warn("Failed to delete preview cache on job failure",
+				zap.Error(err),
+				zap.String("job_id", evt.JobID),
+			)
+		}
+	}
+
+	s.notifyApprovalJobFailed(ctx, evt)
+
+	s.log.Info("Job marked failed from Kafka event",
+		zap.String("job_id", evt.JobID),
+		zap.String("failed_at", evt.FailedAt),
+	)
+	return nil
+}
+
+func (s *orchestratorService) insertFailureStatusHistory(ctx context.Context, jobID, fromStatus, failedAt, errMsg string) {
+	meta, err := json.Marshal(map[string]string{"error": errMsg})
+	if err != nil {
+		meta = []byte("{}")
+	}
+	h := &types.JobStatusHistory{
+		ID:         uuid.NewString(),
+		JobID:      jobID,
+		FromStatus: fromStatus,
+		ToStatus:   types.JobStatusFailed,
+		Service:    failedAt,
+		Metadata:   meta,
+	}
+	if err := s.repo.InsertStatusHistory(ctx, h); err != nil {
+		s.log.Error("Failed to record failure status history",
+			zap.Error(err),
+			zap.String("job_id", jobID),
+		)
+	}
+}
+
+func (s *orchestratorService) notifyApprovalJobFailed(ctx context.Context, evt types.JobFailedEvent) {
+	if s.approval == nil {
+		return
+	}
+	nctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := s.approval.NotifyJobUpdate(nctx, &approvalpb.JobUpdateNotification{
+		JobId:            evt.JobID,
+		UserId:           evt.UserID,
+		Status:           types.JobStatusFailed,
+		Message:          "Job failed",
+		NotificationType: "error",
+		Error:            evt.ErrorMessage,
+	})
+	if err != nil {
+		s.log.Error("Failed to notify approval-service of job failure",
+			zap.Error(err),
+			zap.String("job_id", evt.JobID),
 		)
 	}
 }

@@ -19,6 +19,7 @@ type Repository interface {
 	CreateJob(ctx context.Context, job *types.Job) error
 	GetJobByID(ctx context.Context, id string) (*types.Job, error)
 	UpdateJobStatus(ctx context.Context, id, status string) error
+	UpdateJobFailed(ctx context.Context, id, errorMessage string) error
 	UpdateJob(ctx context.Context, job *types.Job) error
 	InsertStatusHistory(ctx context.Context, h *types.JobStatusHistory) error
 	ListPostResultsByJobID(ctx context.Context, jobID string) ([]types.PostResult, error)
@@ -75,6 +76,24 @@ func (r *mysqlRepository) GetJobByID(ctx context.Context, id string) (*types.Job
 		return nil, fmt.Errorf("orchestrator: get job: %w", err)
 	}
 	return &j, nil
+}
+
+func (r *mysqlRepository) UpdateJobFailed(ctx context.Context, id, errorMessage string) error {
+	const q = `UPDATE jobs SET status = ?, error_message = ?, updated_at = ? WHERE id = ?`
+
+	res, err := r.db.ExecContext(ctx, q, types.JobStatusFailed, errorMessage, time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("orchestrator: update job failed: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("orchestrator: rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrJobNotFound
+	}
+	return nil
 }
 
 func (r *mysqlRepository) UpdateJobStatus(ctx context.Context, id, status string) error {
