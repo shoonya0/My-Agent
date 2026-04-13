@@ -44,6 +44,7 @@ func AutoMigrate(ctx context.Context, db *sql.DB) error {
 					original_image_url VARCHAR(512) NOT NULL,
 					generated_image_url VARCHAR(512) NULL,
 					execution_plan JSON NULL,
+					platforms JSON NULL,
 					error_message TEXT NULL,
 					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 					updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

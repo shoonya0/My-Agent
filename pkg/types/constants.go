@@ -9,6 +9,7 @@ const (
 	JobStatusAwaitingApproval = "awaiting_approval"
 	JobStatusRejected         = "rejected"
 	JobStatusDistributing     = "distributing"
+	JobStatusCompleted        = "completed"
 	JobStatusFailed           = "failed"
 )
 

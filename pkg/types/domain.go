@@ -31,6 +31,7 @@ type Job struct {
 	OriginalImageURL  string          `json:"original_image_url" db:"original_image_url"`
 	GeneratedImageURL string          `json:"generated_image_url" db:"generated_image_url"`
 	ExecutionPlan     json.RawMessage `json:"execution_plan" db:"execution_plan"`
+	Platforms         []string        `json:"platforms,omitempty" db:"platforms"`
 	ErrorMessage      string          `json:"error_message" db:"error_message"`
 	CreatedAt         time.Time       `json:"created_at" db:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at" db:"updated_at"`

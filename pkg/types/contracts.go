@@ -55,6 +55,7 @@ type GetJobResponse struct {
 	RefinedPrompt     string       `json:"refined_prompt,omitempty"`
 	OriginalImageURL  string       `json:"original_image_url"`
 	GeneratedImageURL string       `json:"generated_image_url,omitempty"`
+	Platforms         []string     `json:"platforms,omitempty"`
 	PostResults       []PostResult `json:"post_results,omitempty"`
 	CreatedAt         time.Time    `json:"created_at"`
 }

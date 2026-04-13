@@ -49,6 +49,9 @@ func (h *Handler) SubmitJob(ctx context.Context, req *orchestratorpb.SubmitJobRe
 		Caption:   req.GetCaption(),
 	})
 	if err != nil {
+		if errors.Is(err, ErrNoPlatforms) {
+			return nil, status.Error(codes.InvalidArgument, "at least one platform is required")
+		}
 		h.log.Error("SubmitJob failed", zap.Error(err), zap.String("user_id", req.GetUserId()))
 		return nil, status.Errorf(codes.Internal, "failed to submit job")
 	}
@@ -87,6 +90,7 @@ func (h *Handler) GetJob(ctx context.Context, req *orchestratorpb.GetJobRequest)
 		OriginalImageUrl:  resp.OriginalImageURL,
 		GeneratedImageUrl: resp.GeneratedImageURL,
 		CreatedAtUnix:     resp.CreatedAt.Unix(),
+		Platforms:         resp.Platforms,
 	}
 	for _, pr := range resp.PostResults {
 		out.PostResults = append(out.PostResults, &orchestratorpb.PostResultMsg{
@@ -110,9 +114,6 @@ func (h *Handler) ApproveJob(ctx context.Context, req *orchestratorpb.ApproveJob
 	if req.GetJobId() == "" || req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "job_id and user_id are required")
 	}
-	if len(req.GetPlatforms()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "at least one platform is required")
-	}
 
 	resp, err := h.svc.ApproveJob(ctx, req.GetJobId(), req.GetUserId(), types.ApproveJobRequest{
 		Caption:   req.GetCaption(),
@@ -128,6 +129,8 @@ func (h *Handler) ApproveJob(ctx context.Context, req *orchestratorpb.ApproveJob
 			return nil, status.Error(codes.FailedPrecondition, "image preview not ready")
 		case errors.Is(err, ErrInvalidJobState):
 			return nil, status.Error(codes.FailedPrecondition, "job is not awaiting approval")
+		case errors.Is(err, ErrNoPlatforms):
+			return nil, status.Error(codes.InvalidArgument, "at least one platform is required (submit job with platforms or pass platforms on approve)")
 		default:
 			h.log.Error("ApproveJob failed", zap.Error(err), zap.String("job_id", req.GetJobId()))
 			return nil, status.Errorf(codes.Internal, "failed to approve job")

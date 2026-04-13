@@ -128,11 +128,31 @@ func (s *Service) distribute(ctx context.Context, evt types.ImageApprovedEvent) 
 		}
 	}
 
-	if successCount == 0 && len(results) > 0 {
-		s.publishJobFailed(ctx, evt, "all platform connectors failed")
+	switch {
+	case successCount == 0 && len(results) > 0:
+		s.publishJobFailed(ctx, evt, "all platform distributions failed")
 		span.SetStatus(codes.Error, "all platforms failed")
-	} else {
+		s.log.Error("All platform distributions failed",
+			zap.String("job_id", evt.JobID),
+			zap.Int("total_platforms", len(results)),
+		)
+	case successCount > 0:
+		if err := s.repo.UpdateJobStatus(ctx, evt.JobID, types.JobStatusCompleted); err != nil {
+			s.log.Error("Failed to update job to completed",
+				zap.String("job_id", evt.JobID),
+				zap.Error(err),
+			)
+		} else {
+			s.log.Info("Job completed successfully",
+				zap.String("job_id", evt.JobID),
+				zap.Int("successful_platforms", successCount),
+				zap.Int("total_platforms", len(results)),
+			)
+		}
 		span.SetStatus(codes.Ok, fmt.Sprintf("%d/%d succeeded", successCount, len(results)))
+	default:
+		// No platforms requested; leave status unchanged.
+		span.SetStatus(codes.Ok, "no platforms")
 	}
 
 	s.log.Info("Distribution complete",

@@ -343,6 +343,7 @@ type GetJobResponse struct {
 	GeneratedImageUrl string                 `protobuf:"bytes,6,opt,name=generated_image_url,json=generatedImageUrl,proto3" json:"generated_image_url,omitempty"`
 	PostResults       []*PostResultMsg       `protobuf:"bytes,7,rep,name=post_results,json=postResults,proto3" json:"post_results,omitempty"`
 	CreatedAtUnix     int64                  `protobuf:"varint,8,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	Platforms         []string               `protobuf:"bytes,9,rep,name=platforms,proto3" json:"platforms,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -431,6 +432,13 @@ func (x *GetJobResponse) GetCreatedAtUnix() int64 {
 		return x.CreatedAtUnix
 	}
 	return 0
+}
+
+func (x *GetJobResponse) GetPlatforms() []string {
+	if x != nil {
+		return x.Platforms
+	}
+	return nil
 }
 
 type ApproveJobRequest struct {
@@ -651,7 +659,7 @@ const file_api_proto_orchestrator_proto_rawDesc = "" +
 	"\ferror_detail\x18\b \x01(\tR\verrorDetail\x12#\n" +
 	"\rattempt_count\x18\t \x01(\x05R\fattemptCount\x12&\n" +
 	"\x0fcreated_at_unix\x18\n" +
-	" \x01(\x03R\rcreatedAtUnix\"\xd1\x02\n" +
+	" \x01(\x03R\rcreatedAtUnix\"\xef\x02\n" +
 	"\x0eGetJobResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12'\n" +
@@ -660,7 +668,8 @@ const file_api_proto_orchestrator_proto_rawDesc = "" +
 	"\x12original_image_url\x18\x05 \x01(\tR\x10originalImageUrl\x12.\n" +
 	"\x13generated_image_url\x18\x06 \x01(\tR\x11generatedImageUrl\x12A\n" +
 	"\fpost_results\x18\a \x03(\v2\x1e.orchestrator.v1.PostResultMsgR\vpostResults\x12&\n" +
-	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\"{\n" +
+	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\x12\x1c\n" +
+	"\tplatforms\x18\t \x03(\tR\tplatforms\"{\n" +
 	"\x11ApproveJobRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x18\n" +

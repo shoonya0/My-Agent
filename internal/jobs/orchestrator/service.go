@@ -82,12 +82,17 @@ func (s *orchestratorService) SubmitJob(ctx context.Context, userID string, req 
 		attribute.String("user.id", userID),
 	)
 
+	if len(req.Platforms) == 0 {
+		return nil, ErrNoPlatforms
+	}
+
 	job := &types.Job{
 		ID:               jobID,
 		UserID:           userID,
 		Status:           types.JobStatusPending,
 		OriginalPrompt:   req.Prompt,
 		OriginalImageURL: req.ImageURL,
+		Platforms:        append([]string(nil), req.Platforms...),
 	}
 	if err := s.repo.CreateJob(ctx, job); err != nil {
 		return nil, fmt.Errorf("orchestrator: create job: %w", err)
@@ -135,7 +140,7 @@ func (s *orchestratorService) SubmitJob(ctx context.Context, userID string, req 
 	return &types.SubmitJobResponse{
 		JobID:     jobID,
 		Status:    types.JobStatusRefining,
-		WsURL:     fmt.Sprintf("/ws/%s", jobID),
+		WsURL:     fmt.Sprintf("/api/v1/ws/%s", jobID),
 		CreatedAt: job.CreatedAt,
 	}, nil
 }
@@ -167,6 +172,7 @@ func (s *orchestratorService) GetJob(ctx context.Context, jobID, userID string) 
 		RefinedPrompt:     job.RefinedPrompt,
 		OriginalImageURL:  job.OriginalImageURL,
 		GeneratedImageURL: job.GeneratedImageURL,
+		Platforms:         append([]string(nil), job.Platforms...),
 		PostResults:       postResults,
 		CreatedAt:         job.CreatedAt,
 	}, nil
@@ -194,13 +200,25 @@ func (s *orchestratorService) ApproveJob(ctx context.Context, jobID, userID stri
 		return nil, err
 	}
 
+	platforms := append([]string(nil), req.Platforms...)
+	if len(platforms) == 0 && len(job.Platforms) > 0 {
+		platforms = append([]string(nil), job.Platforms...)
+		s.log.Info("Using original submission platforms for approval",
+			zap.String("job_id", jobID),
+			zap.Strings("platforms", platforms),
+		)
+	}
+	if len(platforms) == 0 {
+		return nil, ErrNoPlatforms
+	}
+
 	fromStatus := job.Status
 	event := types.ImageApprovedEvent{
 		JobID:     jobID,
 		UserID:    userID,
 		ImageURL:  imageURL,
 		Caption:   req.Caption,
-		Platforms: req.Platforms,
+		Platforms: platforms,
 		TraceCtx:  apmotel.ExtractTraceContext(ctx),
 	}
 	if err := s.producer.Publish(ctx, topicImageApproved, jobID, event); err != nil {
@@ -215,7 +233,7 @@ func (s *orchestratorService) ApproveJob(ctx context.Context, jobID, userID stri
 	s.log.Info("Job approved via orchestrator",
 		zap.String("job_id", jobID),
 		zap.String("user_id", userID),
-		zap.Strings("platforms", req.Platforms),
+		zap.Strings("platforms", platforms),
 	)
 
 	return &types.JobActionResponse{

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"myAgent/pkg/dbutil"
 	"myAgent/pkg/types"
 )
 
@@ -41,13 +42,14 @@ func (r *mysqlRepository) CreateJob(ctx context.Context, job *types.Job) error {
 
 	const q = `
 		INSERT INTO jobs (id, user_id, status, original_prompt, refined_prompt,
-			original_image_url, generated_image_url, execution_plan, error_message,
+			original_image_url, generated_image_url, execution_plan, platforms, error_message,
 			created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := r.db.ExecContext(ctx, q,
 		job.ID, job.UserID, job.Status, job.OriginalPrompt, job.RefinedPrompt,
 		job.OriginalImageURL, job.GeneratedImageURL, job.ExecutionPlan,
+		dbutil.JSONStringSlice(job.Platforms),
 		job.ErrorMessage, job.CreatedAt, job.UpdatedAt,
 	)
 	if err != nil {
@@ -59,16 +61,21 @@ func (r *mysqlRepository) CreateJob(ctx context.Context, job *types.Job) error {
 func (r *mysqlRepository) GetJobByID(ctx context.Context, id string) (*types.Job, error) {
 	const q = `
 		SELECT id, user_id, status, original_prompt, refined_prompt,
-			original_image_url, generated_image_url, execution_plan,
+			original_image_url, generated_image_url, execution_plan, platforms,
 			error_message, created_at, updated_at
 		FROM jobs WHERE id = ?`
 
 	var j types.Job
+	var platforms dbutil.JSONStringSlice
 	err := r.db.QueryRowContext(ctx, q, id).Scan(
 		&j.ID, &j.UserID, &j.Status, &j.OriginalPrompt, &j.RefinedPrompt,
 		&j.OriginalImageURL, &j.GeneratedImageURL, &j.ExecutionPlan,
+		&platforms,
 		&j.ErrorMessage, &j.CreatedAt, &j.UpdatedAt,
 	)
+	if err == nil {
+		j.Platforms = []string(platforms)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrJobNotFound
 	}

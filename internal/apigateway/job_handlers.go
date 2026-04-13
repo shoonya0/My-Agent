@@ -146,6 +146,7 @@ func (h *GatewayHandler) GetJob(c *gin.Context) {
 		RefinedPrompt:     pbResp.GetRefinedPrompt(),
 		OriginalImageURL:  pbResp.GetOriginalImageUrl(),
 		GeneratedImageURL: pbResp.GetGeneratedImageUrl(),
+		Platforms:         pbResp.GetPlatforms(),
 		CreatedAt:         time.Unix(pbResp.GetCreatedAtUnix(), 0).UTC(),
 	}
 	for _, pr := range pbResp.GetPostResults() {
@@ -175,14 +176,6 @@ func (h *GatewayHandler) ApproveJob(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp := messages.ParseBindingErrorWithFields(err)
 		c.JSON(http.StatusBadRequest, resp)
-		return
-	}
-
-	if len(req.Platforms) == 0 {
-		c.JSON(http.StatusBadRequest, messages.ErrorResponse(
-			messages.ErrCodeMissingField,
-			messages.MsgPlatformsRequired,
-		))
 		return
 	}
 

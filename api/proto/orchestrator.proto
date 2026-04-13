@@ -55,6 +55,7 @@ message GetJobResponse {
   string generated_image_url = 6;
   repeated PostResultMsg post_results = 7;
   int64 created_at_unix = 8;
+  repeated string platforms = 9;
 }
 
 message ApproveJobRequest {
