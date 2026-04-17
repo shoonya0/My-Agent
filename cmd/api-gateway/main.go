@@ -9,13 +9,13 @@ import (
 	"myAgent/api/orchestratorpb"
 	"myAgent/internal/apigateway"
 	"myAgent/internal/platforms/credentials"
-	"myAgent/pkg/infrastructure/bootstrap"
 	"myAgent/pkg/crypto"
-	"myAgent/pkg/infrastructure/httpserver"
-	"myAgent/pkg/types"
 	"myAgent/pkg/data/mysql"
 	"myAgent/pkg/data/redis"
+	"myAgent/pkg/infrastructure/bootstrap"
+	"myAgent/pkg/infrastructure/httpserver"
 	"myAgent/pkg/storage"
+	"myAgent/pkg/types"
 	ws "myAgent/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -49,7 +49,7 @@ func subscribeToApprovalUpdates(ctx context.Context, client approvalpb.ApprovalS
 		})
 		if err != nil {
 			log.Error("Failed to subscribe to approval updates", zap.Error(err), zap.Duration("retry_in", retryDelay))
-			
+
 			select {
 			case <-time.After(retryDelay):
 				retryDelay = retryDelay * 2
@@ -92,46 +92,23 @@ func subscribeToApprovalUpdates(ctx context.Context, client approvalpb.ApprovalS
 	}
 }
 
-// client connection is used to make gRPC calls to the auth-service
-func dialAuthService(cfg *types.Config, log *zap.Logger) *grpc.ClientConn {
-	// it creates a new client connection to the auth-service
+// dialGRPCService creates a gRPC client connection to the specified service.
+// It uses insecure credentials (no TLS) and OpenTelemetry instrumentation for tracing.
+func dialGRPCService(serviceName, addr string, log *zap.Logger) *grpc.ClientConn {
 	conn, err := grpc.NewClient(
-		cfg.AuthServiceAddr,
-		// it uses insecure mode because we are not using TLS this helps us to avoid the need to generate a certificate and key
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		// it uses the otelgrpc.NewClientHandler() to track the gRPC calls
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-	)
-	if err != nil {
-		log.Fatal("Failed to dial auth-service", zap.String("addr", cfg.AuthServiceAddr), zap.Error(err))
-	}
-	log.Info("Connected to auth-service gRPC", zap.String("addr", cfg.AuthServiceAddr))
-	return conn
-}
-
-func dialOrchestratorService(cfg *types.Config, log *zap.Logger) *grpc.ClientConn {
-	conn, err := grpc.NewClient(
-		cfg.OrchestratorServiceAddr,
+		addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {
-		log.Fatal("Failed to dial orchestrator", zap.String("addr", cfg.OrchestratorServiceAddr), zap.Error(err))
+		log.Fatal("Failed to dial gRPC service",
+			zap.String("service", serviceName),
+			zap.String("addr", addr),
+			zap.Error(err))
 	}
-	log.Info("Connected to orchestrator gRPC", zap.String("addr", cfg.OrchestratorServiceAddr))
-	return conn
-}
-
-func dialApprovalService(cfg *types.Config, log *zap.Logger) *grpc.ClientConn {
-	conn, err := grpc.NewClient(
-		cfg.ApprovalServiceAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-	)
-	if err != nil {
-		log.Fatal("Failed to dial approval-service", zap.String("addr", cfg.ApprovalServiceAddr), zap.Error(err))
-	}
-	log.Info("Connected to approval-service gRPC", zap.String("addr", cfg.ApprovalServiceAddr))
+	log.Info("Connected to gRPC service",
+		zap.String("service", serviceName),
+		zap.String("addr", addr))
 	return conn
 }
 
@@ -185,18 +162,16 @@ func main() {
 	// it creates a new credentials handler using the credentials service
 	credHandler := credentials.NewHandler(credSvc)
 
-	// it creates a new auth connection using the auth service address
-	authConn := dialAuthService(cfg, log)
+	// Create gRPC client connections to internal services
+	authConn := dialGRPCService("auth-service", cfg.AuthServiceAddr, log)
 	defer authConn.Close()
-
-	// it creates a new auth client using the auth connection that was created in the dialAuthService function
 	authClient := authpb.NewAuthServiceClient(authConn)
 
-	orchConn := dialOrchestratorService(cfg, log)
+	orchConn := dialGRPCService("orchestrator", cfg.OrchestratorServiceAddr, log)
 	defer orchConn.Close()
 	orchClient := orchestratorpb.NewOrchestratorServiceClient(orchConn)
 
-	approvalConn := dialApprovalService(cfg, log)
+	approvalConn := dialGRPCService("approval-service", cfg.ApprovalServiceAddr, log)
 	defer approvalConn.Close()
 	approvalClient := approvalpb.NewApprovalServiceClient(approvalConn)
 

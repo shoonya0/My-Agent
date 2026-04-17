@@ -59,15 +59,27 @@ func (d *Discord) Publish(ctx context.Context, req types.PostRequest) (*types.Pu
 
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request payload: %w", err)
+		err = fmt.Errorf("discord: marshal request payload: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
+	webhookURLWithWait := webhookURL + "?wait=true"
 	// ?wait=true makes Discord return the created message object.
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL+"?wait=true", bytes.NewReader(payload))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURLWithWait, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("discord: build request: %w", err)
+		err = fmt.Errorf("discord: build request: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+
+	span.SetAttributes(
+		attribute.String("http.request.method", "POST"),
+		attribute.String("http.url", webhookURLWithWait),
+	)
 
 	resp, err := d.client.Do(httpReq)
 	if err != nil {
@@ -76,6 +88,8 @@ func (d *Discord) Publish(ctx context.Context, req types.PostRequest) (*types.Pu
 		return nil, fmt.Errorf("discord: http call: %w", err)
 	}
 	defer resp.Body.Close()
+
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -90,7 +104,10 @@ func (d *Discord) Publish(ctx context.Context, req types.PostRequest) (*types.Pu
 		ChannelID string `json:"channel_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("discord: decode response: %w", err)
+		err = fmt.Errorf("discord: decode response: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	span.SetStatus(codes.Ok, "published")

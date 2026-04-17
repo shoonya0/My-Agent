@@ -6,7 +6,7 @@ import "time"
 // The image file is handled separately by the handler via c.Request.FormFile.
 type SubmitJobRequest struct {
 	Prompt    string   `form:"prompt" json:"prompt" validate:"required,max=1000"`
-	Platforms []string `form:"platforms" json:"platforms" validate:"required,min=1,dive,oneof=instagram whatsapp discord telegram youtube slack"`
+	Platforms []string `form:"platforms" json:"platforms" validate:"required,min=1,dive,oneof=instagram whatsapp discord telegram"`
 	Caption   string   `form:"caption" json:"caption" validate:"max=2200"`
 }
 

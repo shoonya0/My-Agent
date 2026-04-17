@@ -71,72 +71,128 @@ func (ig *Instagram) Publish(ctx context.Context, req types.PostRequest) (*types
 }
 
 func (ig *Instagram) createMediaContainer(ctx context.Context, req types.PostRequest, token string) (string, error) {
+	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "instagram.createMediaContainer")
+	defer span.End()
+
 	payload, err := json.Marshal(map[string]string{
 		"image_url":    req.MediaURL,
 		"caption":      req.Caption,
 		"access_token": token,
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshal request payload: %w", err)
+		err = fmt.Errorf("instagram: marshal request payload: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, instagramAPIBase+"/media", bytes.NewReader(payload))
+	endpoint := instagramAPIBase + "/media"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		err = fmt.Errorf("instagram: build request: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
+	span.SetAttributes(
+		attribute.String("http.request.method", "POST"),
+		attribute.String("http.url", endpoint),
+	)
+
 	resp, err := ig.client.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("http call: %w", err)
+		err = fmt.Errorf("instagram: http call: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 	defer resp.Body.Close()
 
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
+		err := fmt.Errorf("instagram: unexpected status %d: %s", resp.StatusCode, body)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 
 	var result struct {
 		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
+		err = fmt.Errorf("instagram: decode response: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
+
+	span.SetStatus(codes.Ok, "container created")
 	return result.ID, nil
 }
 
 func (ig *Instagram) publishContainer(ctx context.Context, containerID string, token string) (string, error) {
+	ctx, span := otel.Tracer("pkg/connectors").Start(ctx, "instagram.publishContainer")
+	defer span.End()
+
 	payload, err := json.Marshal(map[string]string{
 		"creation_id":  containerID,
 		"access_token": token,
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshal request payload: %w", err)
+		err = fmt.Errorf("instagram: marshal request payload: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, instagramAPIBase+"/media_publish", bytes.NewReader(payload))
+	endpoint := instagramAPIBase + "/media_publish"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		err = fmt.Errorf("instagram: build request: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
+	span.SetAttributes(
+		attribute.String("http.request.method", "POST"),
+		attribute.String("http.url", endpoint),
+	)
+
 	resp, err := ig.client.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("http call: %w", err)
+		err = fmt.Errorf("instagram: http call: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 	defer resp.Body.Close()
 
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
+		err := fmt.Errorf("instagram: unexpected status %d: %s", resp.StatusCode, body)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
 
 	var result struct {
 		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
+		err = fmt.Errorf("instagram: decode response: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
 	}
+
+	span.SetStatus(codes.Ok, "published")
 	return result.ID, nil
 }

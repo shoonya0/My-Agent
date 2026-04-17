@@ -1,8 +1,10 @@
 package logger
 
 import (
+	"context"
 	"os"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -60,4 +62,25 @@ func parseLevel(level string) zapcore.Level {
 		return zapcore.InfoLevel
 	}
 	return l
+}
+
+// WithTraceContext extracts the trace ID and span ID from the given context
+// and returns them as zap fields for log-trace correlation.
+// If the context does not contain a valid span, it returns an empty slice.
+//
+// Usage example:
+//
+//	logger.Info("processing request",
+//	    zap.String("user_id", userID),
+//	    logger.WithTraceContext(ctx)...,
+//	)
+func WithTraceContext(ctx context.Context) []zap.Field {
+	span := trace.SpanFromContext(ctx)
+	if !span.SpanContext().IsValid() {
+		return nil
+	}
+	return []zap.Field{
+		zap.String("trace_id", span.SpanContext().TraceID().String()),
+		zap.String("span_id", span.SpanContext().SpanID().String()),
+	}
 }

@@ -70,16 +70,27 @@ func (wa *WhatsApp) Publish(ctx context.Context, req types.PostRequest) (*types.
 
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request payload: %w", err)
+		err = fmt.Errorf("whatsapp: marshal request payload: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 	endpoint := fmt.Sprintf("%s/%s/messages", whatsappAPIBase, phoneNumberID)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("whatsapp: build request: %w", err)
+		err = fmt.Errorf("whatsapp: build request: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+token)
+
+	span.SetAttributes(
+		attribute.String("http.request.method", "POST"),
+		attribute.String("http.url", endpoint),
+	)
 
 	resp, err := wa.client.Do(httpReq)
 	if err != nil {
@@ -88,6 +99,8 @@ func (wa *WhatsApp) Publish(ctx context.Context, req types.PostRequest) (*types.
 		return nil, fmt.Errorf("whatsapp: http call: %w", err)
 	}
 	defer resp.Body.Close()
+
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -103,7 +116,10 @@ func (wa *WhatsApp) Publish(ctx context.Context, req types.PostRequest) (*types.
 		} `json:"messages"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("whatsapp: decode response: %w", err)
+		err = fmt.Errorf("whatsapp: decode response: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	messageID := ""

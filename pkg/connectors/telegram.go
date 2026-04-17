@@ -64,15 +64,26 @@ func (t *Telegram) Publish(ctx context.Context, req types.PostRequest) (*types.P
 
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request payload: %w", err)
+		err = fmt.Errorf("telegram: marshal request payload: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 	endpoint := fmt.Sprintf("%s%s/sendPhoto", telegramAPIBase, token)
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("telegram: build request: %w", err)
+		err = fmt.Errorf("telegram: build request: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+
+	span.SetAttributes(
+		attribute.String("http.request.method", "POST"),
+		attribute.String("http.url", endpoint),
+	)
 
 	resp, err := t.client.Do(httpReq)
 	if err != nil {
@@ -81,6 +92,8 @@ func (t *Telegram) Publish(ctx context.Context, req types.PostRequest) (*types.P
 		return nil, fmt.Errorf("telegram: http call: %w", err)
 	}
 	defer resp.Body.Close()
+
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -91,13 +104,24 @@ func (t *Telegram) Publish(ctx context.Context, req types.PostRequest) (*types.P
 	}
 
 	var result struct {
-		OK     bool `json:"ok"`
-		Result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description,omitempty"`
+		Result      struct {
 			MessageID int `json:"message_id"`
 		} `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("telegram: decode response: %w", err)
+		err = fmt.Errorf("telegram: decode response: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	if !result.OK {
+		err := fmt.Errorf("telegram: api error: %s", result.Description)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	span.SetStatus(codes.Ok, "published")
