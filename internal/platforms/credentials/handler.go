@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"myAgent/pkg/middleware/auth"
 	"myAgent/pkg/messages"
+	"myAgent/pkg/middleware/auth"
 	"myAgent/pkg/types"
 
 	"github.com/gin-gonic/gin"
@@ -26,10 +26,15 @@ func NewHandler(svc Service) *Handler {
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	creds := rg.Group("/credentials")
 	{
+		// connect a new platform
 		creds.POST("", h.Connect)
+		// list all connected platforms
 		creds.GET("", h.List)
+		// get a specific platform
 		creds.GET("/:platform", h.Get)
+		// update a specific platform
 		creds.PUT("/:platform", h.Update)
+		// disconnect a platform
 		creds.DELETE("/:platform", h.Disconnect)
 	}
 }

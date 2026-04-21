@@ -70,6 +70,7 @@ func (h *GatewayHandler) RegisterRoutes(r *gin.Engine, log *zap.Logger) {
 		})
 	}
 
+	// oauth callback route to handle the callback from the oauth provider
 	r.GET("/auth/:provider/callback", func(c *gin.Context) {
 		h.OAuthCallback(c, log)
 	})
@@ -78,12 +79,19 @@ func (h *GatewayHandler) RegisterRoutes(r *gin.Engine, log *zap.Logger) {
 	protected.Use(auth.JWTMiddleware(h.cfg.JWTSecret, h.rdb))
 	protected.Use(ratelimit.RateLimiter(h.rdb, 60))
 	{
+		// get the current user
 		protected.GET("/me", h.Me)
+		// submit a new job
 		protected.POST("/jobs", h.SubmitJob)
+		// get a job by id
 		protected.GET("/jobs/:job_id", h.GetJob)
+		// approve a job
 		protected.POST("/jobs/:job_id/approve", h.ApproveJob)
+		// reject a job
 		protected.POST("/jobs/:job_id/reject", h.RejectJob)
+		// get the current user's jobs
 		protected.GET("/ws/:job_id", h.HandleWebSocket)
+
 	}
 
 	h.credHandler.RegisterRoutes(protected)
