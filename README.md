@@ -96,8 +96,6 @@ User ──POST /api/v1/jobs──▸ API Gateway ──gRPC──▸ Orchestrat
 ### 📊 Production-Ready Observability
 - **OpenTelemetry** distributed tracing (Jaeger)
 - **Structured logging** (Zap, JSON format)
-- **Metrics** (Prometheus-ready)
-- **Grafana dashboards** (Docker Compose included)
 
 ---
 
@@ -119,11 +117,11 @@ User ──POST /api/v1/jobs──▸ API Gateway ──gRPC──▸ Orchestrat
 
 | Service/Component | Port | Type | Notes |
 |-------------------|------|------|-------|
-| **MySQL** | 3306 | TCP | Database |
+| **MySQL** | 3307 | TCP | Database |
 | **Redis** | 6379 | TCP | Cache & blacklist |
 | **Kafka** | 9092 | TCP | Event bus |
-| **api-gateway** | 8080 | HTTP/WS | Public REST + WebSocket |
-| **auth-service** | 9090 | gRPC | Internal auth RPCs |
+| **api-gateway** | 8090 | HTTP/WS | Public REST + WebSocket |
+| **auth-service** | 9190 | gRPC | Internal auth RPCs |
 | **orchestrator** | 9091 | gRPC | Internal job RPCs |
 | **approval-service** | 9093 | gRPC | Streaming job updates |
 | **ComfyUI** | 8188 | HTTP | External (image generation) |
@@ -141,7 +139,7 @@ User ──POST /api/v1/jobs──▸ API Gateway ──gRPC──▸ Orchestrat
 - **LLM**: OpenAI GPT-4o
 - **Image Processing**: ComfyUI
 - **Storage**: AWS S3 (SDK v2) or MinIO
-- **Observability**: OpenTelemetry, Zap, Jaeger, Prometheus, Grafana
+- **Observability**: OpenTelemetry, Zap, Jaeger
 - **Authentication**: JWT (golang-jwt/v5), OAuth2
 
 ---
@@ -159,7 +157,6 @@ User ──POST /api/v1/jobs──▸ API Gateway ──gRPC──▸ Orchestrat
 ### Optional
 - **Docker** & **Docker Compose** (for running infrastructure)
 - **Jaeger** (for distributed tracing)
-- **Prometheus** & **Grafana** (for metrics & dashboards)
 - **AWS S3** or **MinIO** (for image storage)
 
 ---
@@ -246,7 +243,7 @@ go run cmd/distribution/main.go
 
 ```bash
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 
 # Expected response:
 # {"status":"ok"}
@@ -275,8 +272,8 @@ Configuration is managed via **environment variables** or a `config.env` file. A
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_GATEWAY_PORT` | `8080` | Public HTTP/WebSocket port |
-| `GRPC_PORT` | `9090` | Auth service gRPC port |
+| `API_GATEWAY_PORT` | `8090` | Public HTTP/WebSocket port |
+| `GRPC_PORT` | `9190` | Auth service gRPC port |
 | `ORCHESTRATOR_GRPC_PORT` | `9091` | Orchestrator gRPC port |
 | `APPROVAL_GRPC_PORT` | `9093` | Approval service gRPC streaming port |
 
@@ -286,7 +283,7 @@ Configuration is managed via **environment variables** or a `config.env` file. A
 |----------|----------|-------------|
 | `GOOGLE_OAUTH_CLIENT_ID` | Google | OAuth2 client ID |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Google | OAuth2 client secret |
-| `GOOGLE_OAUTH_REDIRECT_URL` | Google | Redirect URL (e.g., `http://localhost:8080/auth/google/callback`) |
+| `GOOGLE_OAUTH_REDIRECT_URL` | Google | Redirect URL (e.g., `http://localhost:8090/auth/google/callback`) |
 | `GITHUB_OAUTH_CLIENT_ID` | GitHub | OAuth2 client ID |
 | `GITHUB_OAUTH_CLIENT_SECRET` | GitHub | OAuth2 client secret |
 | `GITHUB_OAUTH_REDIRECT_URL` | GitHub | Redirect URL |
@@ -337,8 +334,8 @@ start-services.bat
 #### Manual
 ```bash
 # Find processes
-lsof -i :8080,:9090,:9091,:9093  # Unix
-netstat -ano | findstr :8080     # Windows
+lsof -i :8090,:9190,:9091,:9093  # Unix
+netstat -ano | findstr :8090     # Windows
 
 # Kill by PID
 kill <PID>        # Unix
@@ -365,7 +362,7 @@ For more details, see [RUNNING_SERVICES.md](RUNNING_SERVICES.md).
 
 ### Base URL
 ```
-http://localhost:8080
+http://localhost:8090
 ```
 
 ### Authentication
@@ -384,7 +381,7 @@ Authorization: Bearer <access_token>
 Register a new user.
 
 ```bash
-curl -X POST http://localhost:8080/api/register \
+curl -X POST http://localhost:8090/api/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -411,7 +408,7 @@ curl -X POST http://localhost:8080/api/register \
 Authenticate existing user.
 
 ```bash
-curl -X POST http://localhost:8080/api/login \
+curl -X POST http://localhost:8090/api/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -423,7 +420,7 @@ curl -X POST http://localhost:8080/api/login \
 OAuth2 callback (Google, GitHub).
 
 ```
-http://localhost:8080/auth/google/callback?code=xyz&state=abc
+http://localhost:8090/auth/google/callback?code=xyz&state=abc
 ```
 
 #### 🔒 Protected Endpoints
@@ -432,7 +429,7 @@ http://localhost:8080/auth/google/callback?code=xyz&state=abc
 Submit a new image editing job.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/jobs \
+curl -X POST http://localhost:8090/api/v1/jobs \
   -H "Authorization: Bearer <token>" \
   -F "image=@photo.jpg" \
   -F "prompt=Make the sky dramatic with sunset colors" \
@@ -448,7 +445,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
   "data": {
     "job_id": "550e8400-e29b-41d4-a716-446655440000",
     "status": "pending",
-    "ws_url": "ws://localhost:8080/ws/550e8400-e29b-41d4-a716-446655440000",
+    "ws_url": "ws://localhost:8090/ws/550e8400-e29b-41d4-a716-446655440000",
     "created_at": "2026-04-12T10:30:00Z"
   }
 }
@@ -458,7 +455,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 Real-time job status updates.
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/ws/550e8400-e29b-41d4-a716-446655440000');
+const ws = new WebSocket('ws://localhost:8090/ws/550e8400-e29b-41d4-a716-446655440000');
 
 ws.onmessage = (event) => {
   const notification = JSON.parse(event.data);
@@ -475,7 +472,7 @@ ws.onmessage = (event) => {
 Approve generated image for distribution.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/jobs/{job_id}/approve \
+curl -X POST http://localhost:8090/api/v1/jobs/{job_id}/approve \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -488,7 +485,7 @@ curl -X POST http://localhost:8080/api/v1/jobs/{job_id}/approve \
 Reject generated image.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/jobs/{job_id}/reject \
+curl -X POST http://localhost:8090/api/v1/jobs/{job_id}/reject \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -500,7 +497,7 @@ curl -X POST http://localhost:8080/api/v1/jobs/{job_id}/reject \
 Get job details and results.
 
 ```bash
-curl -X GET http://localhost:8080/api/v1/jobs/{job_id} \
+curl -X GET http://localhost:8090/api/v1/jobs/{job_id} \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -534,7 +531,7 @@ curl -X GET http://localhost:8080/api/v1/jobs/{job_id} \
 Connect social platform account.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/credentials \
+curl -X POST http://localhost:8090/api/v1/credentials \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -731,22 +728,16 @@ All services use **Zap** with JSON output:
 }
 ```
 
-### Metrics (TODO)
+### Observability
 
-Prometheus-compatible metrics planned:
-- `pipeline_jobs_total` (counter, by status)
-- `http_requests_duration_seconds` (histogram)
-- `kafka_messages_consumed_total` (counter, by topic)
-
-### Dashboards
-
-Grafana dashboards included in `docker-compose.yml`:
+The project uses OpenTelemetry for distributed tracing through Jaeger:
 
 ```bash
-# Access Grafana
-open http://localhost:3000
-# Login: admin / admin_change_me
+# Access Jaeger UI
+open http://localhost:16686
 ```
+
+All services instrument key operations (HTTP requests, gRPC calls, database queries, Kafka messages) with spans for detailed request tracing.
 
 ---
 

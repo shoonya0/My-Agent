@@ -24,9 +24,9 @@ echo.
 echo All services started in separate windows!
 echo.
 echo Service Endpoints:
-echo   - API Gateway:      http://localhost:8080
-echo   - Auth Service:     gRPC on localhost:9090
-echo   - Approval Service: gRPC on localhost:9092
+echo   - API Gateway:      http://localhost:8090
+echo   - Auth Service:     gRPC on localhost:9190
+echo   - Approval Service: gRPC on localhost:9093
 echo.
 echo Close the individual terminal windows to stop each service.
 echo.

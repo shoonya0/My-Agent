@@ -63,9 +63,9 @@ When all services are running:
 
 | Service              | Type    | Endpoint              |
 | -------------------- | ------- | --------------------- |
-| **API Gateway**      | HTTP/WS | http://localhost:8080 |
-| **Auth Service**     | gRPC    | localhost:9090        |
-| **Approval Service** | gRPC    | localhost:9092        |
+| **API Gateway**      | HTTP/WS | http://localhost:8090 |
+| **Auth Service**     | gRPC    | localhost:9190        |
+| **Approval Service** | gRPC    | localhost:9093        |
 
 ## Stopping Services
 
@@ -75,7 +75,7 @@ When all services are running:
 .\stop-services.ps1
 ```
 
-This will automatically find and kill all service processes on ports 8080, 9090, 9092, 9093.
+This will automatically find and kill all service processes on ports 8090, 9190, 9091, 9093 (not Kafka on 9092).
 
 ### Manual methods
 
@@ -116,14 +116,14 @@ Before running any script, ensure:
 1. **Go is installed** (`go version` should work)
 2. **Dependencies are installed** (run `go mod download` in the project root)
 3. **Configuration is set up** (environment variables or config.env file)
-4. **MySQL is running** on the configured port (default: 3306)
+4. **MySQL is running** on the configured port (default: 3307)
 5. **Redis is running** on the configured port (default: 6379)
 
 ## Troubleshooting
 
 **Port already in use:**
 
-- Check if services are already running: `lsof -i :8080` (Unix) or `netstat -ano | findstr :8080` (Windows)
+- Check if services are already running: `lsof -i :8090` (Unix) or `netstat -ano | findstr :8090` (Windows)
 - Kill existing processes or change ports in configuration
 
 **Services not starting:**

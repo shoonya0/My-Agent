@@ -1,6 +1,11 @@
 name: myagent
 
 # MyAgent infrastructure services: Redis, Kafka, MySQL, Jaeger, MinIO
+#
+# When you run app binaries locally with config.env, typical host ports are:
+#   API gateway HTTP 8090, auth gRPC 9190, auth HTTP 8082, orchestrator gRPC 9091,
+#   approval gRPC 9093.
+# Infra below uses ports: MySQL 3307, Redis 6379, Kafka 9092, MinIO 9000/9001, etc.
 # Usage from repo root:
 #   docker compose up -d
 #   docker compose ps
@@ -120,7 +125,7 @@ services:
     restart: unless-stopped
     networks: [myagent]
     ports:
-      - "3306:3306"
+      - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword_change_me
       MYSQL_DATABASE: myagent
@@ -142,10 +147,10 @@ services:
           "root",
           "-prootpassword_change_me",
         ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
 
   # --- Jaeger ---------------------------------------------------------------
   jaeger:

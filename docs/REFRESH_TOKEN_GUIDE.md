@@ -9,9 +9,9 @@ The refresh token feature has been implemented following the microservice archit
 ```
 Client (HTTP)
     ↓
-api-gateway (Port 8080)
+api-gateway (Port 8090)
     ↓ gRPC
-auth-service (Port 9090)
+auth-service (Port 9190)
     ↓
 MySQL + Redis
 ```
@@ -101,7 +101,7 @@ Ends the session for the **access** token in `Authorization` (required). Optiona
 **Example**
 
 ```bash
-curl -X POST http://localhost:8080/api/logout \
+curl -X POST http://localhost:8090/api/logout \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
@@ -167,7 +167,7 @@ If `refresh_token` is omitted, only the access token JTI is blacklisted; always 
 
 ```bash
 # Login
-curl -X POST http://localhost:8080/api/login \
+curl -X POST http://localhost:8090/api/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -195,7 +195,7 @@ REFRESH_TOKEN="eyJhbGc..."
 
 ```bash
 # Make authenticated request
-curl -X GET http://localhost:8080/api/v1/me \
+curl -X GET http://localhost:8090/api/v1/me \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
@@ -203,7 +203,7 @@ curl -X GET http://localhost:8080/api/v1/me \
 
 ```bash
 # When you get 401 Unauthorized, refresh the token
-curl -X POST http://localhost:8080/api/refresh \
+curl -X POST http://localhost:8090/api/refresh \
   -H "Content-Type: application/json" \
   -d "{\"refresh_token\": \"$REFRESH_TOKEN\"}"
 
@@ -213,7 +213,7 @@ curl -X POST http://localhost:8080/api/refresh \
 ### 4. Logout (Both Tokens)
 
 ```bash
-curl -X POST http://localhost:8080/api/logout \
+curl -X POST http://localhost:8090/api/logout \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
@@ -260,7 +260,7 @@ class TokenManager {
   }
 
   async refreshAccessToken() {
-    const response = await fetch('http://localhost:8080/api/refresh', {
+    const response = await fetch('http://localhost:8090/api/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: this.refreshToken })
@@ -285,7 +285,7 @@ class TokenManager {
 
 // Usage
 const api = new TokenManager();
-const response = await api.makeRequest('http://localhost:8080/api/v1/jobs');
+const response = await api.makeRequest('http://localhost:8090/api/v1/jobs');
 ```
 
 ## Best Practices
@@ -317,7 +317,7 @@ See `test_refresh_token.sh` for automated testing script.
 
 ```bash
 # 1. Login
-curl -X POST http://localhost:8080/api/login \
+curl -X POST http://localhost:8090/api/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"password123"}' \
   | jq -r '.data.refresh_token' > refresh_token.txt
@@ -325,18 +325,18 @@ curl -X POST http://localhost:8080/api/login \
 # 2. Wait for access token to expire (15 minutes) or use immediately
 
 # 3. Refresh token
-curl -X POST http://localhost:8080/api/refresh \
+curl -X POST http://localhost:8090/api/refresh \
   -H "Content-Type: application/json" \
   -d "{\"refresh_token\":\"$(cat refresh_token.txt)\"}"
 
 # 4. Logout — send access (bearer) + refresh (body)
-curl -X POST http://localhost:8080/api/logout \
+curl -X POST http://localhost:8090/api/logout \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"refresh_token\":\"$(cat refresh_token.txt)\"}"
 
 # 5. Try to refresh after logout (should fail with 401)
-curl -X POST http://localhost:8080/api/refresh \
+curl -X POST http://localhost:8090/api/refresh \
   -H "Content-Type: application/json" \
   -d "{\"refresh_token\":\"$(cat refresh_token.txt)\"}"
 ```

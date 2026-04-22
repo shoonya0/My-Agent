@@ -26,6 +26,15 @@ func Load() *types.Config {
 
 	viper.AutomaticEnv()
 
+	// Viper does not apply struct `default` tags. Without these, omitted keys
+	// unmarshal to "" and gRPC can listen on ":0" (wrong) while clients dial
+	// localhost:9093, etc. Env and config file still override.
+	viper.SetDefault("ORCHESTRATOR_GRPC_PORT", "9091")
+	viper.SetDefault("APPROVAL_GRPC_PORT", "9093")
+	viper.SetDefault("AUTH_SERVICE_ADDR", "localhost:9190")
+	viper.SetDefault("ORCHESTRATOR_SERVICE_ADDR", "localhost:9091")
+	viper.SetDefault("APPROVAL_SERVICE_ADDR", "localhost:9093")
+
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("Config file not found, relying on environment variables: %v", err)
 	}

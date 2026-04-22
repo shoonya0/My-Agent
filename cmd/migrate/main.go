@@ -1,8 +1,8 @@
 // Command migrate runs MySQL schema migrations using golang-migrate.
 //
 // Environment (either works):
-//   - DATABASE_URL: mysql://user:pass@tcp(host:3306)/dbname?multiStatements=true
-//   - MYSQL_DSN:    go-sql-driver form, e.g. user:pass@tcp(127.0.0.1:3306)/myagent?parseTime=true
+//   - DATABASE_URL: mysql://user:pass@tcp(host:3307)/dbname?multiStatements=true
+//   - MYSQL_DSN:    go-sql-driver form, e.g. user:pass@tcp(127.0.0.1:3307)/myagent?parseTime=true
 package main
 
 import (

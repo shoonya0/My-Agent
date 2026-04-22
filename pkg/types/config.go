@@ -5,12 +5,12 @@ package types
 // cause a panic at startup if missing.
 type Config struct {
 	LogLevel string `mapstructure:"LOG_LEVEL" default:"info"`
-	GRPCPort string `mapstructure:"GRPC_PORT" default:"9090"`
+	GRPCPort string `mapstructure:"GRPC_PORT" default:"9190"`
 	MySQLDSN string `mapstructure:"MYSQL_DSN" required:"true"`
 
 	// Service Names and Ports
 	APIServiceName           string `mapstructure:"API_SERVICE_NAME" default:"api-gateway"`
-	APIGatewayPort           string `mapstructure:"API_GATEWAY_PORT" default:"8080"`
+	APIGatewayPort           string `mapstructure:"API_GATEWAY_PORT" default:"8090"`
 	AuthServiceName          string `mapstructure:"AUTH_SERVICE_NAME" default:"auth-service"`
 	AuthServicePort          string `mapstructure:"AUTH_SERVICE_PORT" default:"8082"`
 	OrchestratorServiceName  string `mapstructure:"ORCHESTRATOR_SERVICE_NAME" default:"orchestrator"`
@@ -39,7 +39,7 @@ type Config struct {
 	AWSRegion               string `mapstructure:"AWS_REGION" default:"us-east-1"`
 	AWSAccessKeyID          string `mapstructure:"AWS_ACCESS_KEY_ID" optional:"true"`
 	AWSSecretAccessKey      string `mapstructure:"AWS_SECRET_ACCESS_KEY" optional:"true"`
-	AuthServiceAddr         string `mapstructure:"AUTH_SERVICE_ADDR" default:"localhost:9090"`
+	AuthServiceAddr         string `mapstructure:"AUTH_SERVICE_ADDR" default:"localhost:9190"`
 	OrchestratorServiceAddr string `mapstructure:"ORCHESTRATOR_SERVICE_ADDR" default:"localhost:9091"`
 	OrchestratorGRPCPort    string `mapstructure:"ORCHESTRATOR_GRPC_PORT" default:"9091"`
 	ApprovalServiceAddr     string `mapstructure:"APPROVAL_SERVICE_ADDR" default:"localhost:9093"`

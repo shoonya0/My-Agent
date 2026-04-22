@@ -1,7 +1,7 @@
 # Stop MyAgent Services
-# Kills processes using ports 8080, 9090, 9092, 9093
+# Kills processes using application ports (not infra: Kafka uses 9092, Redis 6379, etc.)
 
-$ports = @(8080, 9090, 9092, 9093)
+$ports = @(8090, 9190, 9091, 9093)
 
 Write-Host "Stopping MyAgent services..." -ForegroundColor Yellow
 

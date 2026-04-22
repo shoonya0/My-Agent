@@ -61,9 +61,9 @@ Write-Host ""
 
 # Display service endpoints
 Write-Host "Service Endpoints:" -ForegroundColor Blue
-Write-Host "  - API Gateway:      http://localhost:8080"
-Write-Host "  - Auth Service:     gRPC on localhost:9090"
-Write-Host "  - Approval Service: gRPC on localhost:9092"
+Write-Host "  - API Gateway:      http://localhost:8090"
+Write-Host "  - Auth Service:     gRPC on localhost:9190"
+Write-Host "  - Approval Service: gRPC on localhost:9093"
 Write-Host ""
 
 # Display log file locations

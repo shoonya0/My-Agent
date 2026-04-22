@@ -66,9 +66,9 @@ echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}\n"
 
 # Display service endpoints
 echo -e "${BLUE}Service Endpoints:${NC}"
-echo -e "  • API Gateway:      http://localhost:8080"
-echo -e "  • Auth Service:     gRPC on localhost:9090"
-echo -e "  • Approval Service: gRPC on localhost:9092"
+echo -e "  • API Gateway:      http://localhost:8090"
+echo -e "  • Auth Service:     gRPC on localhost:9190"
+echo -e "  • Approval Service: gRPC on localhost:9093"
 echo ""
 
 # Wait for all background processes

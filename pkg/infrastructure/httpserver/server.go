@@ -14,7 +14,7 @@ import (
 
 const defaultShutdownTimeout = 10 * time.Second
 
-// Start binds the given handler to addr (e.g. ":8080"), serves HTTP traffic,
+// Start binds the given handler to addr (e.g. ":8090"), serves HTTP traffic,
 // and blocks until SIGINT or SIGTERM is received. It then gracefully drains
 // in-flight requests within the shutdown timeout before returning.
 func Start(addr string, handler http.Handler) error {
